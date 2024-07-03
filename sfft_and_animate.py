@@ -80,7 +80,7 @@ def sfft_and_animate(oid,band):
     # First, need all the images that don't contain the SN. 
     out_tab = get_mjd_info(start,end,return_inverse=True)
     out_rows = np.where(np.isin(tab['pointing'],out_tab['pointing']))[0]
-    out_tab = tab[out_rows][:5] # Only use the first 5 images 
+    out_tab = tab[out_rows][:10] # Only use the first 5 images 
     filepaths = list(map(_build_filepath,[None]*len(out_tab),out_tab['filter'],out_tab['pointing'],out_tab['sca'],['image']*len(out_tab)))
 
     skysub_ref_init = []
@@ -95,6 +95,7 @@ def sfft_and_animate(oid,band):
         imalign_ref_init.append(align)
 
         # Check that each reference tile contains an overlap_size cutout over the SN location.
+        # This prevents PSF discontinuities too close to the SN. 
         with fits.open(align) as hdu:
             ref_img = hdu[0].data
             ref_wcs = WCS(hdu[0].header)
@@ -108,6 +109,7 @@ def sfft_and_animate(oid,band):
     # Only keep the ones that overlap.
     skysub_ref = [skysub_ref_init[i] for i in ref_idx]
     imalign_ref = [imalign_ref_init[i] for i in ref_idx]
+    filepaths_ref = [filepaths[i] for i in ref_idx]
     print('You ended with', len(imalign_ref), 'template images for the coadd after checking overlap.')
 
     # This is just for WCS and filename information:
@@ -117,10 +119,9 @@ def sfft_and_animate(oid,band):
     coadd_savepath = f'/work/lna18/imsub_out/coadd/{oid}_{band}_{refvisit}_{refsca}_coadd.fits'
     # if not os.path.exists(coadd_savepath):
     # Eventually don't want to rebuild them every time, but for now, maybe yeah you do. 
-    coadd_img_path, coadd_img_paths_all = swarp_coadd_img(imalign_ref,imalign_ref[0],f'{oid}_{band}_{refvisit}_{refsca}_coadd.fits')
+    coadd_img_path, coadd_img_paths_all = swarp_coadd_img(filepaths_ref,filepaths[0],f'{oid}_{band}_{refvisit}_{refsca}_coadd.fits')
     print('Template image successfully coadded.')
-    print('ref_path')
-    print(coadd_img_path)
+
     coadd_psf_path = swarp_coadd_psf(RA,DEC,skysub_ref,imalign_ref,
                                         out_tab,coadd_img_path,
                                         out_name=f'{oid}_{band}_{refvisit}_{refsca}_coadd_psf.fits')
@@ -165,7 +166,7 @@ def sfft_and_animate(oid,band):
         print(band, pointing, sca)
 
         sci_skysub_path = sky_subtract(band=band,pointing=pointing,sca=sca)
-        sci_imalign_path = imalign(coadd_img_path,sci_skysub_path)
+        sci_imalign_path = imalign(skysub_ref_init[0],sci_skysub_path)
 
         # Check that the image sufficiently overlaps with the SN and reference areas. 
         with fits.open(sci_imalign_path) as hdu:
