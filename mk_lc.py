@@ -21,7 +21,9 @@ from phrosty.photometry import ap_phot, psfmodel, psf_phot, crossmatch
 
 ###########################################################################
 
-def make_lc(oid, band, exptime, coord, area_eff):
+def make_lc(
+    oid, band, exptime, coord, area_eff, infodir="/hpc/group/cosmology/lna18", workdir=".", outdir="."
+):
     filters = []
     pointings = []
     scas = []
@@ -40,9 +42,10 @@ def make_lc(oid, band, exptime, coord, area_eff):
     x_fit = []
     y_fit = []
 
-    tab = Table.read(
-        f"/hpc/group/cosmology/lna18/roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_instances_nomjd.csv"
+    transient_info_file = os.path.join(
+        infodir, f"roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_instances_nomjd.csv"
     )
+    tab = Table.read(transient_info_file)
     tab = tab[tab["filter"] == band]
     tab.sort("pointing")
 
@@ -56,7 +59,7 @@ def make_lc(oid, band, exptime, coord, area_eff):
     ref_pointing = tab[0]["pointing"]
     ref_sca = tab[0]["sca"]
     # Get reference image. 
-    ref_path = f'/work/lna18/imsub_out/coadd/cutouts_4k/{oid}_{band}_{pointing}_{sca}_coadd_4kcutout.fits'
+    ref_path = os.path.join(workdir, f"imsub_out/coadd/cutouts_4k/{oid}_{band}_{ref_pointing}_{ref_sca}_coadd_4kcutout.fits")
     with fits.open(ref_path) as ref_hdu:
         ref_wcs = WCS(ref_hdu[0].header)
 
@@ -68,9 +71,18 @@ def make_lc(oid, band, exptime, coord, area_eff):
         print(band, get_mjd(pointing), pointing, sca)
 
         # Decorrelated:
-        zp_imgdir = f"/work/lna18/imsub_out/science/decorr_conv_align_skysub_Roman_TDS_simple_model_{band}_{pointing}_{sca}.fits"
-        sndir = f"/work/lna18/imsub_out/subtract/decorr/decorr_diff_conv_align_skysub_Roman_TDS_simple_model_{band}_{pointing}_{sca}.fits"
-        psf_imgdir = f"/work/lna18/imsub_out/psf_final/conv_align_skysub_Roman_TDS_simple_model_{band}_{pointing}_{sca}.sfft_DCSCI.DeCorrelated.dcPSFFStack.fits"
+        zp_imgdir = os.path.join(
+            workdir,
+            f"imsub_out/science/decorr_conv_align_skysub_Roman_TDS_simple_model_{band}_{pointing}_{sca}.fits",
+        )
+        sndir = os.path.join(
+            workdir,
+            f"imsub_out/subtract/decorr/decorr_diff_conv_align_skysub_Roman_TDS_simple_model_{band}_{pointing}_{sca}.fits",
+        )
+        psf_imgdir = os.path.join(
+            workdir,
+            f"imsub_out/psf_final/conv_align_skysub_Roman_TDS_simple_model_{band}_{pointing}_{sca}.sfft_DCSCI.DeCorrelated.dcPSFFStack.fits",
+        )
 
         # Sky-subtracted field for generating the ZP.
         zp_hdu = fits.open(zp_imgdir)
@@ -135,7 +147,10 @@ def make_lc(oid, band, exptime, coord, area_eff):
         plt.ylabel("Fit + zpt - truth")
         plt.title(f"{band} {pointing} {sca}")
         plt.savefig(
-            f"/hpc/group/cosmology/lna18/roman_sim_imgs/Roman_Rubin_Sims_2024/20172782/zpt_plots/zpt_{band}_{pointing}_{sca}.png",
+            os.path.join(
+                outdir,
+                f"roman_sim_imgs/Roman_Rubin_Sims_2024/20172782/zpt_plots/zpt_{band}_{pointing}_{sca}.png",
+            ),
             dpi=300,
             bbox_inches="tight",
         )
@@ -213,11 +228,11 @@ def make_lc(oid, band, exptime, coord, area_eff):
             "zpt",
         ],
     )
-    savepath = f'/hpc/group/cosmology/lna18/roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_{band}_lc_coadd.csv'
+    savepath = os.path.join(outdir, f"roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_{band}_lc_coadd.csv")
     results.write(savepath, format="csv", overwrite=True)
 
 
-def make_lc_plot(oid, band, start, end):
+def make_lc_plot(oid, band, start, end, lcdir):
     # MAKE ONE LC PLOT
     # Read in truth:
     truthpath = f"/hpc/group/cosmology/phy-lsst/work/dms118/roman_imsim/filtered_data/filtered_data_{oid}.txt"
@@ -236,7 +251,7 @@ def make_lc_plot(oid, band, start, end):
     truthfunc = interp1d(truth["mjd"], truth["mag"], bounds_error=False)
 
     # Get photometry.
-    phot_path = f"/hpc/group/cosmology/lna18/roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_{band}_lc.csv"
+    phot_path = os.path.join(lcdir, f"roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_{band}_lc.csv")
     phot = Table.read(phot_path)
     phot.sort("mjd")
 
@@ -328,7 +343,7 @@ def parse_and_run():
         "slurm_array",
         default=False,
         action="store_true",
-        help="If we're a slurm array jobwe're going to process the band_idx from the array id.",
+        help="If we're a slurm array job we're going to process the band_idx from the SLURM_ARRAY_ID.",
     )
 
     args = parser.parse_args()
