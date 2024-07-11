@@ -24,6 +24,11 @@ from phrosty.photometry import ap_phot, psfmodel, psf_phot, crossmatch
 def make_lc(
     oid, band, exptime, coord, area_eff, infodir="/hpc/group/cosmology/lna18", workdir=".", outdir="."
 ):
+    if not os.path.exists(workdir):
+        os.path.mkdir(workdir)
+    if not os.path.exists(outdir):
+        os.path.mkdir(outdir)
+
     filters = []
     pointings = []
     scas = []
@@ -327,7 +332,7 @@ def parse_slurm():
 
 
 def parse_and_run():
-    parser = argparse.ArgumentParse(
+    parser = argparse.ArgumentParser(
         prog="mk_lc", description="Runs subtractions against a reference template for given SN"
     )
     parser.add_argument(
@@ -336,11 +341,11 @@ def parse_and_run():
     parser.add_argument(
         "band",
         type=str,
-        choice=[None, "F184", "H158", "J129", "K213", "R062", "Y106", "Z087"],
+        choices=[None, "F184", "H158", "J129", "K213", "R062", "Y106", "Z087"],
         help="Filter to use.  None to use all available.  Overriding by --slurm_array.",
     )
     parser.add_argument(
-        "slurm_array",
+        "--slurm_array",
         default=False,
         action="store_true",
         help="If we're a slurm array job we're going to process the band_idx from the SLURM_ARRAY_ID.",
@@ -348,7 +353,7 @@ def parse_and_run():
 
     args = parser.parse_args()
 
-    if args.slurm:
+    if args.slurm_array:
         args.band = parse_slurm()
 
     run(args.oid, args.band)
