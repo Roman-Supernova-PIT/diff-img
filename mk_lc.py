@@ -38,8 +38,8 @@ def make_lc(oid, band, exptime, coord, area_eff):
     ra_fit = []
     dec_fit = []
     x_fit = []
-    y_fit = [] 
-    
+    y_fit = []
+
     tab = Table.read(f'/hpc/group/cosmology/lna18/roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_instances_nomjd.csv')
     tab = tab[tab['filter'] == band]
     tab.sort('pointing')
@@ -79,7 +79,7 @@ def make_lc(oid, band, exptime, coord, area_eff):
         psf_hdu = fits.open(psf_imgdir)
         psf_img = psf_hdu[0].data
 
-        # Get coordinates of stars in the aligned image. 
+        # Get coordinates of stars in the aligned image.
         orig_tab = read_truth_txt(band=band, pointing=pointing, sca=sca)
         orig_tab['x'].name, orig_tab['y'].name = 'x_orig', 'y_orig'
         orig_tab['mag'].name = 'mag_truth'
@@ -98,21 +98,21 @@ def make_lc(oid, band, exptime, coord, area_eff):
         nanrows = np.array([~np.any(np.isnan(cut)) for cut in cutouts])
         stars = stars[nanrows]
 
-        # Do PSF photometry to get the zero point. 
-        # Build PSF. 
+        # Do PSF photometry to get the zero point.
+        # Build PSF.
         psf = psfmodel(psf_img)
         init_params = ap_phot(zp_img,stars)
         res = psf_phot(zp_img,psf,init_params,wcs=zp_wcs)
         print('SN results from star photometry:', res[-1]['flux_fit'])
 
-        # Crossmatch. 
+        # Crossmatch.
         xm = crossmatch(res, stars)
 
-        # Get the zero point. 
+        # Get the zero point.
         star_fit_mags = -2.5*np.log10(xm['flux_fit'])
         star_truth_mags = star_truth_mags = -2.5*np.log10(xm['flux_truth'].data) + 2.5*np.log10(exptime[band]*area_eff) + gs_zpt
         zpt_mask = np.logical_and(star_truth_mags > 20, star_truth_mags < 23)
-        zpt = np.nanmedian(star_truth_mags[zpt_mask] - star_fit_mags[zpt_mask]) 
+        zpt = np.nanmedian(star_truth_mags[zpt_mask] - star_fit_mags[zpt_mask])
 
         plt.figure(figsize=(6,6))
         plt.plot(star_truth_mags,star_fit_mags + zpt - star_truth_mags,
@@ -123,8 +123,8 @@ def make_lc(oid, band, exptime, coord, area_eff):
         plt.title(f'{band} {pointing} {sca}')
         plt.savefig(f'/hpc/group/cosmology/lna18/roman_sim_imgs/Roman_Rubin_Sims_2024/20172782/zpt_plots/zpt_{band}_{pointing}_{sca}.png', dpi=300, bbox_inches='tight')
 
-        try: 
-            # Photometry on the SN itself. 
+        try:
+            # Photometry on the SN itself.
             px_coords = sub_wcs.world_to_pixel(coord)
             forcecoords = Table([[float(px_coords[0])],[float(px_coords[1])]],names=['x','y'])
             init_sn = ap_phot(sub_img.data,forcecoords,ap_r=4)
@@ -132,7 +132,7 @@ def make_lc(oid, band, exptime, coord, area_eff):
 
             print('SN results from SN photometry:', res_sn['flux_fit'])
 
-            mag = -2.5*np.log10(res_sn['flux_fit'][0]) 
+            mag = -2.5*np.log10(res_sn['flux_fit'][0])
             mag_err = np.sqrt((1.09/res_sn['flux_fit'][0]**2*res_sn['flux_err'][0]**2))
 
             filters.append(band)
@@ -151,7 +151,7 @@ def make_lc(oid, band, exptime, coord, area_eff):
             ra_fit.append(res_sn['ra'][0])
             dec_fit.append(res_sn['dec'][0])
             x_fit.append(res_sn['x_fit'][0])
-            y_fit.append(res_sn['y_fit'][0]) 
+            y_fit.append(res_sn['y_fit'][0])
 
         except TypeError:
             print(f'fit_shape overlaps with edge for {band} {pointing} {sca}.')
@@ -185,7 +185,7 @@ def make_lc_plot(oid, band, start, end):
     phot = Table.read(phot_path)
     phot.sort('mjd')
 
-    # Make residuals. 
+    # Make residuals.
     resids = truthfunc(phot['mjd']) - (phot['mag'] + phot['zpt'])
 
     fig, ax = plt.subplots(nrows=2,sharex=True,height_ratios=[1,0.5],figsize=(14,14))
@@ -236,7 +236,7 @@ def run(oid, band):
 
     make_lc(oid, band, exptime[band], coord, area_eff)
     make_lc_plot(oid, band, start, end)
-    
+
 
 def parse_slurm():
     # SLURM
@@ -265,7 +265,7 @@ def parse_and_run():
     parser.add_argument("oid", type=int, help="ID of transient.  Used to look up hard-coded information on transient.")
     parser.add_argument("band", type=str, choice=[None, "F184", "H158", "J129", "K213", "R062", "Y106", "Z087"], help="Filter to use.  None to use all available.  Overriding by --slurm_array.")
     parser.add_argument("slurm_array", default=False, action="store_true", help="If we're a slurm array jobwe're going to process the band_idx from the array id.")
-    
+
     args = parser.parse_args()
 
     if args.slurm:
@@ -273,7 +273,7 @@ def parse_and_run():
 
     run(args.oid, args.band)
     print('FINISHED!')
-    
+
 if __name__ == '__main__':
     parse_and_run()
 
