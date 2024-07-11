@@ -22,7 +22,7 @@ from phrosty.photometry import ap_phot, psfmodel, psf_phot, crossmatch
 ###########################################################################
 
 
-def get_star_truth_coordinates_in_aligned_images(band, pointing, sca, ref_wcs, nx=4088, ny=4088):
+def get_star_truth_coordinates_in_aligned_images(band, pointing, sca, ref_wcs, exptime, n=4088, ny=4088):
         """
         Get coordinates of stars in the aligned image.
 
@@ -33,7 +33,7 @@ def get_star_truth_coordinates_in_aligned_images(band, pointing, sca, ref_wcs, n
         orig_tab["x"].name, orig_tab["y"].name = "x_orig", "y_orig"
         orig_tab["mag"].name = "mag_truth"
         orig_tab["mag_truth"] = (
-            -2.5 * np.log10(orig_tab["flux"]) + 2.5 * np.log10(exptime[band] * area_eff) + gs_zpt
+            -2.5 * np.log10(orig_tab["flux"]) + 2.5 * np.log10(exptime * area_eff) + gs_zpt
         )
         worldcoords = SkyCoord(ra=orig_tab['ra']*u.deg, dec=orig_tab['dec']*u.deg)
         x, y = skycoord_to_pixel(worldcoords, wcs)
@@ -88,12 +88,10 @@ def calc_sn_photometry(sub_img, sub_wcs):
     return mag, mag_err
 
 def make_lc(
-    oid, band, exptime, coord, area_eff, infodir="/hpc/group/cosmology/lna18", workdir=".", outdir="."
+    oid, band, exptime, coord, area_eff, infodir="/hpc/group/cosmology/lna18", inputdir=".", outputdir="."
 ):
-    if not os.path.exists(workdir):
-        os.path.mkdir(workdir)
-    if not os.path.exists(outdir):
-        os.path.mkdir(outdir)
+    if not os.path.exists(outputdir):
+        os.path.mkdir(outputdir)
 
     filters = []
     pointings = []
@@ -130,7 +128,7 @@ def make_lc(
     ref_pointing = tab[0]["pointing"]
     ref_sca = tab[0]["sca"]
     # Get reference image. 
-    ref_path = os.path.join(workdir, f"imsub_out/coadd/cutouts_4k/{oid}_{band}_{ref_pointing}_{ref_sca}_coadd_4kcutout.fits")
+    ref_path = os.path.join(inputdir, f"imsub_out/coadd/cutouts_4k/{oid}_{band}_{ref_pointing}_{ref_sca}_coadd_4kcutout.fits")
     with fits.open(ref_path) as ref_hdu:
         ref_wcs = WCS(ref_hdu[0].header)
 
@@ -143,15 +141,15 @@ def make_lc(
 
         # Decorrelated:
         zp_imgdir = os.path.join(
-            workdir,
+            inputdir,
             f"imsub_out/science/decorr_conv_align_skysub_Roman_TDS_simple_model_{band}_{pointing}_{sca}.fits",
         )
         sndir = os.path.join(
-            workdir,
+            inputdir,
             f"imsub_out/subtract/decorr/decorr_diff_conv_align_skysub_Roman_TDS_simple_model_{band}_{pointing}_{sca}.fits",
         )
         psf_imgdir = os.path.join(
-            workdir,
+            inputdir,
             f"imsub_out/psf_final/conv_align_skysub_Roman_TDS_simple_model_{band}_{pointing}_{sca}.sfft_DCSCI.DeCorrelated.dcPSFFStack.fits",
         )
 
@@ -169,7 +167,7 @@ def make_lc(
         psf_hdu = fits.open(psf_imgdir)
         psf_img = psf_hdu[0].data
 
-        stars = get_star_truth_coordinates_in_aligned_images(band, pointing, sca, ref_wcs, nx=4088, ny=4088)
+        stars = get_star_truth_coordinates_in_aligned_images(band, pointing, sca, ref_wcs, exptime, nx=4088, ny=4088)
 
         # Have to clean out the rows where the value is centered on a NaN.
         # MWV: 2024-07-12  Why?  I mean, why do this based on central pixel
@@ -324,10 +322,10 @@ def make_lc_plot(oid, band, start, end, lcdir):
     ax[1].set_xlabel("MJD")
 
     fig.suptitle(oid, y=0.91)
-    plt.savefig(f"figs/{oid}_{band}.png", dpi=300, bbox_inches="tight")
+    plt.savefig(os.path.join(outputdir, f"figs/{oid}_{band}.png"), dpi=300, bbox_inches="tight")
 
 
-def run(oid, band):
+def run(oid, band, inputdir=".", outputdir="."):
     ra, dec = get_transient_radec(oid)
     start, end = get_transient_mjd(oid)
 
@@ -353,8 +351,8 @@ def run(oid, band):
 
     area_eff = roman.collecting_area
 
-    make_lc(oid, band, exptime[band], coord, area_eff)
-    make_lc_plot(oid, band, start, end)
+    make_lc(oid, band, exptime[band], coord, area_eff, inputdir=inputdir, outputdir=outputdir)
+    make_lc_plot(oid, band, start, end, inputdir=inputdir, outputdir=outputdir)
 
 
 def parse_slurm():
@@ -384,6 +382,18 @@ def parse_and_run():
         help="Filter to use.  None to use all available.  Overriding by --slurm_array.",
     )
     parser.add_argument(
+        "--inputdir",
+        type=str,
+        default=".",
+        help="Location of input information from sfft_and_animate.py",
+    )
+    parser.add_argument(
+        "--outputdir",
+        type=str,
+        default=".",
+        help="Location of output information from sfft_and_animate.py",
+    )
+    parser.add_argument(
         "--slurm_array",
         default=False,
         action="store_true",
@@ -395,7 +405,7 @@ def parse_and_run():
     if args.slurm_array:
         args.band = parse_slurm()
 
-    run(args.oid, args.band)
+    run(args.oid, args.band, inputdir=args.inputdir, outputdir=args.outputdir)
     print("FINISHED!")
 
 
