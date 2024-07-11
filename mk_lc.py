@@ -1,4 +1,5 @@
 # IMPORTS Standard:
+import argparse
 import os
 import sys
 import numpy as np
@@ -21,60 +22,39 @@ from phrosty.photometry import ap_phot, psfmodel, psf_phot, crossmatch
 
 ###########################################################################
 
-# SLURM
-sys.path.append(os.getcwd())
-taskID=int(os.environ['SLURM_ARRAY_TASK_ID'])
+def parse_slurm():
+    # SLURM
+    sys.path.append(os.getcwd())
+    taskID=int(os.environ['SLURM_ARRAY_TASK_ID'])
 
-print('taskID', taskID)
+    print('taskID', taskID)
 
-# config = {1: 20172117, 
-#           2: 20172199, 
-#           3: 20172328, 
-#           4: 20172782, 
-#           5: 20173301, 
-#           6: 20173305, 
-#           7: 20173373, 
-#           8: 20174023, 
-#           9: 20174108, 
-#           10: 20174118, 
-#           11: 20174213, 
-#           12: 20174370, 
-#           13: 20174542, 
-#           14: 20175077, 
-#           15: 20175568, 
-#           16: 20177380,
-#           17: 20202893}
+    config = {1: 'F184',
+              2: 'H158',
+              3: 'J129',
+              4: 'K213',
+              5: 'R062',
+              6: 'Y106',
+              7: 'Z087'}
 
-# oid = config[taskID]
-# print(oid)
-# bands = get_roman_bands()
-
-config = {1: 'F184',
-          2: 'H158',
-          3: 'J129',
-          4: 'K213',
-          5: 'R062',
-          6: 'Y106',
-          7: 'Z087'}
-
-band = config[taskID]
-oid = 20172782
-ra, dec = get_transient_radec(oid)
-start, end = get_transient_mjd(oid)
+    band = config[taskID]
+    oid = 20172782
+    ra, dec = get_transient_radec(oid)
+    start, end = get_transient_mjd(oid)
 
 ###########################################################################
 
-coord = SkyCoord(ra=ra*u.deg, dec=dec*u.deg)
+    coord = SkyCoord(ra=ra*u.deg, dec=dec*u.deg)
 
-exptime = {'F184': 901.175,
-           'J129': 302.275,
-           'H158': 302.275,
-           'K213': 901.175,
-           'R062': 161.025,
-           'Y106': 302.275,
-           'Z087': 101.7}
+    exptime = {'F184': 901.175,
+               'J129': 302.275,
+               'H158': 302.275,
+               'K213': 901.175,
+               'R062': 161.025,
+               'Y106': 302.275,
+               'Z087': 101.7}
 
-area_eff = roman.collecting_area
+    area_eff = roman.collecting_area
 
 ###########################################################################
 
@@ -373,4 +353,16 @@ plt.savefig(f'figs/{oid}_{band}_coadd.png', dpi=300, bbox_inches='tight')
 
 # plt.savefig(f'/hpc/group/cosmology/lna18/roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_lc.png', dpi=300, bbox_inches='tight')
 
-print('FINISHED!')
+def parse_and_run():
+    parse = argparse.ArgumentParse(
+        prog="mk_lc",
+        description="Runs subtractions against a reference template for given SN"
+    )
+    parse.add_argument("o_id", type=int, help="ID of transient.  Used to look up hard-coded information on transient.")
+    args = parser.parse_args()
+
+    lc(args.o_id, args.band)
+    print('FINISHED!')
+    
+if __name__ == '__main__':
+    parse_and_run()
