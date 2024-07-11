@@ -4,7 +4,6 @@ import os
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.gridspec import GridSpec
 from scipy.interpolate import interp1d
 
 # IMPORTS Astro:
@@ -22,24 +21,7 @@ from phrosty.photometry import ap_phot, psfmodel, psf_phot, crossmatch
 
 ###########################################################################
 
-
-###########################################################################
-
-    coord = SkyCoord(ra=ra*u.deg, dec=dec*u.deg)
-
-    exptime = {'F184': 901.175,
-               'J129': 302.275,
-               'H158': 302.275,
-               'K213': 901.175,
-               'R062': 161.025,
-               'Y106': 302.275,
-               'Z087': 101.7}
-
-    area_eff = roman.collecting_area
-
-###########################################################################
-
-def lc(oid, band):
+def make_lc(oid, band, exptime, coord, area_eff):
     filters = []
     pointings = []
     scas = []
@@ -179,165 +161,87 @@ def lc(oid, band):
     savepath = f'/hpc/group/cosmology/lna18/roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_{band}_lc_coadd.csv'
     results.write(savepath, format='csv', overwrite=True)
 
-def main(argv):
-    o_id = int(sys.argv[1])
-    # b = str(sys.argv[2])
-    lc(o_id,band)
+
+def make_lc_plot(oid, band, start, end):
+    # MAKE ONE LC PLOT
+    # Read in truth:
+    truthpath = f'/hpc/group/cosmology/phy-lsst/work/dms118/roman_imsim/filtered_data/filtered_data_{oid}.txt'
+
+    truth = Table.read(truthpath, names=['mjd','filter','mag'], format='ascii')[:-1]
+
+    truth['mjd'] = [row['mjd'].replace('(','') for row in truth]
+    truth['mag'] = [row['mag'].replace(')','') for row in truth]
+
+    truth['mjd'] = truth['mjd'].astype(float)
+    truth['mag'] = truth['mag'].astype(float)
+    truth['filter'] = [filt.upper() for filt in truth['filter']]
+    truth = truth[truth['filter'] == band[:1]]
+    truth.sort('mjd')
+
+    truthfunc = interp1d(truth['mjd'], truth['mag'], bounds_error=False)
+
+    # Get photometry.
+    phot_path = f'/hpc/group/cosmology/lna18/roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_{band}_lc.csv'
+    phot = Table.read(phot_path)
+    phot.sort('mjd')
+
+    # Make residuals. 
+    resids = truthfunc(phot['mjd']) - (phot['mag'] + phot['zpt'])
+
+    fig, ax = plt.subplots(nrows=2,sharex=True,height_ratios=[1,0.5],figsize=(14,14))
+    plt.subplots_adjust(hspace=0)
+
+    ax[0].errorbar(phot['mjd'],phot['mag']+phot['zpt'],yerr=phot['magerr'],
+                    marker='o',linestyle='',color='mediumpurple')
+    ax[0].plot(truth['mjd'],truth['mag'],
+                    marker=None,linestyle='-',color='mediumpurple')
+
+    ax[1].axhline(0,color='k',linestyle='--')
+    ax[1].errorbar(phot['mjd'],resids,
+                    marker='o',linestyle='',color='mediumpurple')
+
+
+    ax[0].set_xlim(start,end)
+    ax[0].set_ylim(29,21)
+    ax[0].set_ylabel(band)
+    ax[1].set_xlabel('MJD')
+
+    fig.suptitle(oid,y=0.91)
+    plt.savefig(f'figs/{oid}_{band}.png', dpi=300, bbox_inches='tight')
+
+
+def run(oid, band):
+    ra, dec = get_transient_radec(oid)
+    start, end = get_transient_mjd(oid)
+
+    # oid = 20202893
+    # ra = 8.037774
+    # dec = -42.752337
+
+    # oid = 20172782
+    # ra = 7.551093401915147
+    # dec = -44.80718106491529
+
+    coord = SkyCoord(ra=ra*u.deg, dec=dec*u.deg)
+
+    exptime = {'F184': 901.175,
+               'J129': 302.275,
+               'H158': 302.275,
+               'K213': 901.175,
+               'R062': 161.025,
+               'Y106': 302.275,
+               'Z087': 101.7}
+
+    area_eff = roman.collecting_area
+
+    make_lc(oid, band, exptime[band], coord, area_eff)
+    make_lc_plot(oid, band, start, end)
     
-if __name__ == '__main__':
-    main(sys.argv)
-
-# MAKE ONE LC PLOT
-# Read in truth:
-truthpath = f'/hpc/group/cosmology/phy-lsst/work/dms118/roman_imsim/filtered_data/filtered_data_{oid}.txt'
-
-truth = Table.read(truthpath, names=['mjd','filter','mag'], format='ascii')[:-1]
-
-truth['mjd'] = [row['mjd'].replace('(','') for row in truth]
-truth['mag'] = [row['mag'].replace(')','') for row in truth]
-
-truth['mjd'] = truth['mjd'].astype(float)
-truth['mag'] = truth['mag'].astype(float)
-truth['filter'] = [filt.upper() for filt in truth['filter']]
-truth = truth[truth['filter'] == band[:1]]
-truth.sort('mjd')
-
-truthfunc = interp1d(truth['mjd'], truth['mag'], bounds_error=False)
-
-# Get photometry.
-phot_path = f'/hpc/group/cosmology/lna18/roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_{band}_lc_coadd.csv'
-phot = Table.read(phot_path)
-phot.sort('mjd')
-
-# Make residuals. 
-resids = truthfunc(phot['mjd']) - (phot['mag'] + phot['zpt'])
-
-fig, ax = plt.subplots(nrows=2,sharex=True,height_ratios=[1,0.5],figsize=(14,14))
-plt.subplots_adjust(hspace=0)
-
-ax[0].errorbar(phot['mjd'],phot['mag']+phot['zpt'],yerr=phot['magerr'],
-                marker='o',linestyle='',color='mediumpurple')
-ax[0].plot(truth['mjd'],truth['mag'],
-                marker=None,linestyle='-',color='mediumpurple')
-
-ax[1].axhline(0,color='k',linestyle='--')
-ax[1].errorbar(phot['mjd'],resids,
-                marker='o',linestyle='',color='mediumpurple')
-
-
-ax[0].set_xlim(start,end)
-ax[0].set_ylim(29,21)
-ax[0].set_ylabel(band)
-ax[1].set_xlabel('MJD')
-
-fig.suptitle(oid,y=0.91)
-plt.savefig(f'figs/{oid}_{band}_coadd.png', dpi=300, bbox_inches='tight')
-
-
-# for b in bands:
-#     lc(oid,b)
-
-# lc(oid,band)
-
-# fig = plt.figure(figsize=(14,16))
-# lcidx = [0,1,2,6,7,8,12]
-# resididx = [3,4,5,9,10,11,15]
-
-# bands = ['R062','Z087','Y106','J129','H158','F184','K213']
-# truthbands = ['R','Z','Y','J','H','F','K']
-# colors=['mediumslateblue','darkturquoise','lightgreen','mediumvioletred','darkorange','darkgrey','black']
-# cb_p = 0
-# cb_t = 0
-
-# # Read in truth:
-# truthpath = f'/hpc/group/cosmology/phy-lsst/work/dms118/roman_imsim/filtered_data/filtered_data_{oid}.txt'
-# truth = Table.read(truthpath, names=['mjd','filter','mag'], format='ascii')[:-1]
-
-# truth['mjd'] = [row['mjd'].replace('(','') for row in truth]
-# truth['mag'] = [row['mag'].replace(')','') for row in truth]
-
-# truth['mjd'] = truth['mjd'].astype(float)
-# truth['mag'] = truth['mag'].astype(float)
-# truth['filter'] = [filt.upper() for filt in truth['filter']]
-
-# Make plot:
-# gs = GridSpec(nrows=6,ncols=3, height_ratios=[1,.33,1,.33,1,.33],width_ratios=[1,1,1],wspace=0,hspace=0)
-# for i, g in enumerate(gs):
-#     ax = fig.add_subplot(g)
-    
-#     if i in lcidx:
-#         band = bands[cb_p]
-#         color = colors[cb_p]
-#         tband = truthbands[cb_p]
-        
-#         # Read in photometry:
-#         path = f'/hpc/group/cosmology/lna18/roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_{band}_lc.csv'
-#         lc = Table.read(path, format='csv')
-        
-#         tlc = truth[truth['filter'] == tband]
-#         tlc.sort('mjd')
-        
-#         ax.errorbar(lc['mjd'], lc['mag'] - lc['zpt'], lc['magerr'], 
-#                     marker='o', linestyle='', color=color, label=f'{band}')
-#         ax.plot(tlc['mjd'], tlc['mag'], color=color)
-#         ax.axvline(start, color='k', linestyle='--')
-#         ax.axvline(end, color='k', linestyle='--')
-# #         ax.set_xlim(start,start+200)
-#         ax.set_xlim(start,end)
-#         ax.set_ylim(29,22)
-#         ax.legend(loc='upper right',fontsize='small')
-        
-#         cb_p += 1
-    
-#     if i in resididx:
-#         band = bands[cb_t]
-#         color = colors[cb_t]
-#         tband = truthbands[cb_t]
-        
-#         # Read in photometry:
-#         path = f'/hpc/group/cosmology/lna18/roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_{band}_lc.csv'
-#         lc = Table.read(path, format='csv')
-        
-#         # Read in truth:
-#         tlc = truth[truth['filter'] == tband]
-#         tlc.sort('mjd')
-        
-#         truthfunc = interp1d(tlc['mjd'], tlc['mag'], bounds_error=False)
-#         resids = lc['mag'] - lc['zpt'] - truthfunc(lc['mjd'])
-        
-#         ax.errorbar(lc['mjd'], resids, marker='o', linestyle='', color=color)
-        
-#         ax.axhline(0,color='k',linestyle='--')
-#         ax.set_xlim(start,end)
-
-#         cb_t += 1
-    
-# for ax in fig.get_axes():
-#     ax.tick_params(bottom=False,labelbottom=False,left=False,labelleft=False)
-    
-# fig.get_axes()[0].tick_params(left=True,labelleft=True)
-# fig.get_axes()[3].tick_params(left=True,labelleft=True)
-# fig.get_axes()[6].tick_params(left=True,labelleft=True)
-# fig.get_axes()[9].tick_params(left=True,labelleft=True)
-# fig.get_axes()[12].tick_params(left=True,labelleft=True)
-# fig.get_axes()[15].tick_params(left=True,labelleft=True)
-
-# fig.get_axes()[15].tick_params(bottom=True,labelbottom=True)
-# fig.get_axes()[16].tick_params(bottom=True,labelbottom=True)
-# fig.get_axes()[17].tick_params(bottom=True,labelbottom=True)
-
-# for i in [6,12]:
-#     ax = fig.get_axes()[i]
-#     plt.setp(ax.get_yticklabels()[0], visible=False)
-
-# fig.suptitle(oid,y=0.91)
-
-# plt.savefig(f'/hpc/group/cosmology/lna18/roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_lc.png', dpi=300, bbox_inches='tight')
-
 
 def parse_slurm():
     # SLURM
     sys.path.append(os.getcwd())
+    taskID = int(os.environ['SLURM_ARRAY_TASK_ID'])
 
     print('taskID', taskID)
 
@@ -350,27 +254,27 @@ def parse_slurm():
               7: 'Z087'}
 
     band = config[taskID]
+    return band
 
 
 def parse_and_run():
-    parse = argparse.ArgumentParse(
+    parser = argparse.ArgumentParse(
         prog="mk_lc",
         description="Runs subtractions against a reference template for given SN"
     )
-    parse.add_argument("o_id", type=int, help="ID of transient.  Used to look up hard-coded information on transient.")
-    parse.add_argument("slurm_array", default=False, action="store_true", help="If we're a slurm array jobwe're going to process the band_idx from the array id.")
+    parser.add_argument("oid", type=int, help="ID of transient.  Used to look up hard-coded information on transient.")
+    parser.add_argument("band", type=str, choice=[None, "F184", "H158", "J129", "K213", "R062", "Y106", "Z087"], help="Filter to use.  None to use all available.  Overriding by --slurm_array.")
+    parser.add_argument("slurm_array", default=False, action="store_true", help="If we're a slurm array jobwe're going to process the band_idx from the array id.")
     
     args = parser.parse_args()
 
     if args.slurm:
-        if os.environ['SLURM_ARRAY_TASK_ID']:
-        parse.("band_idx").default = int(os.environ['SLURM_ARRAY_TASK_ID'])
+        args.band = parse_slurm()
 
-    lc(args.o_id, args.band)
+    run(args.oid, args.band)
     print('FINISHED!')
     
 if __name__ == '__main__':
     parse_and_run()
+
     oid = 20172782
-    ra, dec = get_transient_radec(oid)
-    start, end = get_transient_mjd(oid)
