@@ -22,25 +22,6 @@ from phrosty.photometry import ap_phot, psfmodel, psf_phot, crossmatch
 
 ###########################################################################
 
-def parse_slurm():
-    # SLURM
-    sys.path.append(os.getcwd())
-    taskID=int(os.environ['SLURM_ARRAY_TASK_ID'])
-
-    print('taskID', taskID)
-
-    config = {1: 'F184',
-              2: 'H158',
-              3: 'J129',
-              4: 'K213',
-              5: 'R062',
-              6: 'Y106',
-              7: 'Z087'}
-
-    band = config[taskID]
-    oid = 20172782
-    ra, dec = get_transient_radec(oid)
-    start, end = get_transient_mjd(oid)
 
 ###########################################################################
 
@@ -353,16 +334,43 @@ plt.savefig(f'figs/{oid}_{band}_coadd.png', dpi=300, bbox_inches='tight')
 
 # plt.savefig(f'/hpc/group/cosmology/lna18/roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_lc.png', dpi=300, bbox_inches='tight')
 
+
+def parse_slurm():
+    # SLURM
+    sys.path.append(os.getcwd())
+
+    print('taskID', taskID)
+
+    config = {1: 'F184',
+              2: 'H158',
+              3: 'J129',
+              4: 'K213',
+              5: 'R062',
+              6: 'Y106',
+              7: 'Z087'}
+
+    band = config[taskID]
+
+
 def parse_and_run():
     parse = argparse.ArgumentParse(
         prog="mk_lc",
         description="Runs subtractions against a reference template for given SN"
     )
     parse.add_argument("o_id", type=int, help="ID of transient.  Used to look up hard-coded information on transient.")
+    parse.add_argument("slurm_array", default=False, action="store_true", help="If we're a slurm array jobwe're going to process the band_idx from the array id.")
+    
     args = parser.parse_args()
+
+    if args.slurm:
+        if os.environ['SLURM_ARRAY_TASK_ID']:
+        parse.("band_idx").default = int(os.environ['SLURM_ARRAY_TASK_ID'])
 
     lc(args.o_id, args.band)
     print('FINISHED!')
     
 if __name__ == '__main__':
     parse_and_run()
+    oid = 20172782
+    ra, dec = get_transient_radec(oid)
+    start, end = get_transient_mjd(oid)
