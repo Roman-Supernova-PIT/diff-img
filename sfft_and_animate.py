@@ -80,7 +80,7 @@ def sfft_and_animate(oid,band):
     # First, need all the images that don't contain the SN. 
     out_tab = get_mjd_info(start,end,return_inverse=True)
     out_rows = np.where(np.isin(tab['pointing'],out_tab['pointing']))[0]
-    out_tab = tab[out_rows][:10] # Only use the first 5 images 
+    out_tab = tab[out_rows][:5] # Only use the first 5 images 
     filepaths = list(map(_build_filepath,[None]*len(out_tab),out_tab['filter'],out_tab['pointing'],out_tab['sca'],['image']*len(out_tab)))
 
     skysub_ref_init = []
@@ -91,7 +91,7 @@ def sfft_and_animate(oid,band):
     for i, path in enumerate(filepaths):
         skysub = sky_subtract(path=path)
         skysub_ref_init.append(skysub)
-        align = imalign(template_path=skysub_ref_init[0],sci_path=skysub)
+        align = imalign(template_path=skysub_ref_init[0],sci_path=skysub,force=True)
         imalign_ref_init.append(align)
 
         # Check that each reference tile contains an overlap_size cutout over the SN location.
@@ -119,7 +119,8 @@ def sfft_and_animate(oid,band):
     coadd_savepath = f'/work/lna18/imsub_out/coadd/{oid}_{band}_{refvisit}_{refsca}_coadd.fits'
     # if not os.path.exists(coadd_savepath):
     # Eventually don't want to rebuild them every time, but for now, maybe yeah you do. 
-    coadd_img_path, coadd_img_paths_all = swarp_coadd_img(filepaths_ref,filepaths[0],f'{oid}_{band}_{refvisit}_{refsca}_coadd.fits')
+    # Previously aligned to filepaths[0]. 
+    coadd_img_path, coadd_img_paths_all = swarp_coadd_img(filepaths_ref,skysub_ref_init[0],f'{oid}_{band}_{refvisit}_{refsca}_coadd.fits')
     print('Template image successfully coadded.')
 
     coadd_psf_path = swarp_coadd_psf(RA,DEC,skysub_ref,imalign_ref,
@@ -165,8 +166,13 @@ def sfft_and_animate(oid,band):
 
         print(band, pointing, sca)
 
+        # Make a 4088x4088 cutout of the coadded reference image that perfectly overlaps with 
+        # the science image. 
+        ref_4k_savepath = f'/work/lna18/imsub_out/coadd/cutouts_4k/{oid}_{band}_{pointing}_{sca}_coadd_4kcutout.fits'
+        ref_4k = stampmaker(RA,DEC,coadd_img_path,shape=np.array([4088,4088]),savepath=ref_4k_savepath)
+
         sci_skysub_path = sky_subtract(band=band,pointing=pointing,sca=sca)
-        sci_imalign_path = imalign(skysub_ref_init[0],sci_skysub_path)
+        sci_imalign_path = imalign(ref_4k,sci_skysub_path,force=True)
 
         # Check that the image sufficiently overlaps with the SN and reference areas. 
         with fits.open(sci_imalign_path) as hdu:
@@ -182,28 +188,31 @@ def sfft_and_animate(oid,band):
 
         # Get science image PSF and rotate it according to the coadded reference. 
         sci_imsim_psf = get_imsim_psf(RA,DEC,band,pointing,sca,
-                                     ref_path=coadd_img_path)
+                                     ref_path=ref_4k)
         sci_psf_path = rotate_psf(RA,DEC,sci_skysub_path,sci_imalign_path,
-                                  band,pointing,sca,ref_path=coadd_img_path)
-
-        # Make a 4088x4088 cutout of the coadded reference image that perfectly overlaps with 
-        # the science image. 
-        ref_4k_savepath = f'/work/lna18/imsub_out/coadd/cutouts_4k/{oid}_{band}_{pointing}_{sca}_coadd_4kcutout.fits'
-        ref_4k = stampmaker(RA,DEC,coadd_img_path,shape=np.array([4088,4088]),savepath=ref_4k_savepath)
+                                  band,pointing,sca,ref_path=ref_4k,force=True)
 
         # First convolves reference PSF on science image. 
         # Then, convolves science PSF on reference image. 
-        convolvedpaths = crossconvolve(sci_imalign_path, sci_psf_path, ref_4k, coadd_psf_path)
+        convolvedpaths = crossconvolve(sci_imalign_path, sci_psf_path, ref_4k, coadd_psf_path, force=True)
 
         # Make difference image, decorrelation kernel, and decorrelated difference image. 
+        print('CONVOLVEDPATHS')
+        print(convolvedpaths)
         scipath, refpath = convolvedpaths
         print('SCIPATH AFTER CROSS CONVOLVE')
         print(scipath)
         print('REFPATH AFTER CROSS CONVOLVE')
         print(refpath)
-        diff, soln = difference(scipath, refpath, sci_psf_path, coadd_psf_path, backend='Numpy')
+        diff, soln = difference(scipath, refpath, sci_psf_path, coadd_psf_path, backend='Numpy', force=True)
+        print('DIFFERENCE IMAGE PATH')
+        print(diff)        
         dcker_path = decorr_kernel(scipath, refpath, sci_psf_path, coadd_psf_path, diff, soln)
+        print('DECORR KERNEL PATH')
+        print(dcker_path)
         dcimg_path = decorr_img(diff, dcker_path)
+        print('DECORR IMAGE PATH')
+        print(dcimg_path)
 
         # Save difference image stamps. 
         decorr_savepath = f'/work/lna18/imsub_out/subtract/decorr/finalstamps/1K/finalstamp_{RA}_{DEC}_Roman_TDS_simple_model_{band}_{pointing}_{sca}.fits'
@@ -227,40 +236,40 @@ def sfft_and_animate(oid,band):
         rawhdu_small = fits.open(rawstamp_small_path)
         rawstamp_small = rawhdu_small[0].data
 
-        # Detour: Need to take the cross convolved science image and apply the decorrelation
-        # kernel. We get the zpt from this image. 
-        decorr_scipath = decorr_img(scipath,dcker_path,imgtype='science')
+#         # Detour: Need to take the cross convolved science image and apply the decorrelation
+#         # kernel. We get the zpt from this image. 
+#         decorr_scipath = decorr_img(scipath,dcker_path,imgtype='science')
 
-        # Calculate PSF
-        psfpath = calc_psf(scipath,refpath,sci_psf_path,coadd_psf_path,dcker_path)
+#         # Calculate PSF
+#         psfpath = calc_psf(scipath,refpath,sci_psf_path,coadd_psf_path,dcker_path)
 
-        animate_panels.append(finalstamp_small)
-        animate_raw_panels.append(rawstamp_small)
-        animate_pointings.append(pointing)
+#         animate_panels.append(finalstamp_small)
+#         animate_raw_panels.append(rawstamp_small)
+#         animate_pointings.append(pointing)
 
-        zscale = ZScaleInterval()
-        z1, z2 = zscale.get_limits(rawstamp)
-        fig, ax = plt.subplots(figsize=(5,5))
-        im = ax.imshow(rawstamp, cmap='Greys', vmin=z1, vmax=z2)
-        ax.text(0.05,0.95,pointing,color='white',transform=ax.transAxes,va='top',ha='left')
-        divider = make_axes_locatable(ax)
-        cax = divider.append_axes('right', size='5%', pad=0.05)
-        fig.colorbar(im, cax=cax, orientation='vertical')
-        plt.savefig(f'figs/sfft/RAW_{oid}_{band}_{pointing}_{sca}.png', dpi=300, bbox_inches='tight')
-        plt.close()
+#         zscale = ZScaleInterval()
+#         z1, z2 = zscale.get_limits(rawstamp)
+#         fig, ax = plt.subplots(figsize=(5,5))
+#         im = ax.imshow(rawstamp, cmap='Greys', vmin=z1, vmax=z2)
+#         ax.text(0.05,0.95,pointing,color='white',transform=ax.transAxes,va='top',ha='left')
+#         divider = make_axes_locatable(ax)
+#         cax = divider.append_axes('right', size='5%', pad=0.05)
+#         fig.colorbar(im, cax=cax, orientation='vertical')
+#         plt.savefig(f'figs/sfft/RAW_{oid}_{band}_{pointing}_{sca}.png', dpi=300, bbox_inches='tight')
+#         plt.close()
 
     print(n_discard, 'science images were discarded due to insufficent overlap.')
-    # Make animation. 
-    savepath = f'/hpc/group/cosmology/lna18/roman_sim_imgs/Roman_Rubin_Sims_2024/gifs/{oid}/{oid}_{band}_SFFT.gif'
-    if not os.path.exists(f'/hpc/group/cosmology/lna18/roman_sim_imgs/Roman_Rubin_Sims_2024/gifs/{oid}/'):
-        os.mkdir(f'/hpc/group/cosmology/lna18/roman_sim_imgs/Roman_Rubin_Sims_2024/gifs/{oid}/')
+#     # Make animation. 
+#     savepath = f'/hpc/group/cosmology/lna18/roman_sim_imgs/Roman_Rubin_Sims_2024/gifs/{oid}/{oid}_{band}_SFFT.gif'
+#     if not os.path.exists(f'/hpc/group/cosmology/lna18/roman_sim_imgs/Roman_Rubin_Sims_2024/gifs/{oid}/'):
+#         os.mkdir(f'/hpc/group/cosmology/lna18/roman_sim_imgs/Roman_Rubin_Sims_2024/gifs/{oid}/')
     
-    metadata = dict(artist='Lauren Aldoroty')
-    animate_stamps(animate_panels, savepath, metadata, labels=animate_pointings, staticlabel=band)
+#     metadata = dict(artist='Lauren Aldoroty')
+#     animate_stamps(animate_panels, savepath, metadata, labels=animate_pointings, staticlabel=band)
 
-    savepath = f'/hpc/group/cosmology/lna18/roman_sim_imgs/Roman_Rubin_Sims_2024/gifs/{oid}/{oid}_{band}_RAW.gif'
-    metadata = dict(artist='Lauren Aldoroty')
-    animate_stamps(animate_raw_panels, savepath, metadata, labels=animate_pointings, staticlabel=band)
+#     savepath = f'/hpc/group/cosmology/lna18/roman_sim_imgs/Roman_Rubin_Sims_2024/gifs/{oid}/{oid}_{band}_RAW.gif'
+#     metadata = dict(artist='Lauren Aldoroty')
+#     animate_stamps(animate_raw_panels, savepath, metadata, labels=animate_pointings, staticlabel=band)
     
 def main(argv):
     o_id = int(sys.argv[1])
