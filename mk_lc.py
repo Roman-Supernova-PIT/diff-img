@@ -17,7 +17,7 @@ from galsim import roman
 
 # IMPORTS Internal:
 from phrosty.utils import read_truth_txt, get_mjd, get_transient_radec, get_transient_mjd
-from phrosty.sourcedetection import transform_to_wcs
+from phrosty.utils import transform_to_wcs
 from phrosty.photometry import ap_phot, psfmodel, psf_phot, crossmatch
 
 ###########################################################################
