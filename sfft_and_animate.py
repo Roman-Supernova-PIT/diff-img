@@ -17,7 +17,7 @@ from astropy.coordinates import SkyCoord
 from astropy.visualization import ZScaleInterval
 from astropy.io import fits
 from astropy.nddata import Cutout2D
-from astropy.nddata.utils import PartialOverlapError
+from astropy.nddata.utils import PartialOverlapError, NoOverlapError
 import astropy.units as u
 
 # IMPORTS Internal:
@@ -80,7 +80,7 @@ def sfft_and_animate(oid,band):
     # First, need all the images that don't contain the SN. 
     out_tab = get_mjd_info(start,end,return_inverse=True)
     out_rows = np.where(np.isin(tab['pointing'],out_tab['pointing']))[0]
-    out_tab = tab[out_rows][:10] # Only use the first 5 images 
+    out_tab = tab[out_rows][:5] # Only use the first 5 images 
     filepaths = list(map(_build_filepath,[None]*len(out_tab),out_tab['filter'],out_tab['pointing'],out_tab['sca'],['image']*len(out_tab)))
 
     skysub_ref_init = []
@@ -91,15 +91,21 @@ def sfft_and_animate(oid,band):
     for i, path in enumerate(filepaths):
         skysub = sky_subtract(path=path)
         skysub_ref_init.append(skysub)
-        align = imalign(template_path=skysub_ref_init[0],sci_path=skysub)
+        align = imalign(template_path=skysub_ref_init[0],sci_path=skysub,force=True)
         imalign_ref_init.append(align)
 
         # Check that each reference tile contains an overlap_size cutout over the SN location.
         # This prevents PSF discontinuities too close to the SN. 
         with fits.open(align) as hdu:
+            print('ALIGN_PATH')
+            print(align)
             ref_img = hdu[0].data
             ref_wcs = WCS(hdu[0].header)
         try:
+            print('COORD')
+            print(coord)
+            print('REF WCS')
+            print(ref_wcs)
             ref_cutout = Cutout2D(ref_img,coord,overlap_size,wcs=ref_wcs,mode='strict')
             ref_idx.append(i)
         except PartialOverlapError:
@@ -119,7 +125,8 @@ def sfft_and_animate(oid,band):
     coadd_savepath = f'/work/lna18/imsub_out/coadd/{oid}_{band}_{refvisit}_{refsca}_coadd.fits'
     # if not os.path.exists(coadd_savepath):
     # Eventually don't want to rebuild them every time, but for now, maybe yeah you do. 
-    coadd_img_path, coadd_img_paths_all = swarp_coadd_img(filepaths_ref,filepaths[0],f'{oid}_{band}_{refvisit}_{refsca}_coadd.fits')
+    # Previously aligned to filepaths[0]. 
+    coadd_img_path, coadd_img_paths_all = swarp_coadd_img(skysub_ref,skysub_ref_init[0],f'{oid}_{band}_{refvisit}_{refsca}_coadd.fits')
     print('Template image successfully coadded.')
 
     coadd_psf_path = swarp_coadd_psf(RA,DEC,skysub_ref,imalign_ref,
@@ -165,8 +172,16 @@ def sfft_and_animate(oid,band):
 
         print(band, pointing, sca)
 
+        # Make a 4088x4088 cutout of the coadded reference image that perfectly overlaps with 
+        # the science image. 
+        ref_4k_savepath = f'/work/lna18/imsub_out/coadd/cutouts_4k/{oid}_{band}_{pointing}_{sca}_coadd_4kcutout.fits'
+        ref_4k = stampmaker(RA,DEC,coadd_img_path,shape=np.array([4088,4088]),savepath=ref_4k_savepath)
+
         sci_skysub_path = sky_subtract(band=band,pointing=pointing,sca=sca)
-        sci_imalign_path = imalign(skysub_ref_init[0],sci_skysub_path)
+        sci_imalign_path = imalign(ref_4k,sci_skysub_path,force=True)
+
+        print('REF_4K_PATH')
+        print(ref_4k)
 
         # Check that the image sufficiently overlaps with the SN and reference areas. 
         with fits.open(sci_imalign_path) as hdu:
@@ -182,28 +197,34 @@ def sfft_and_animate(oid,band):
 
         # Get science image PSF and rotate it according to the coadded reference. 
         sci_imsim_psf = get_imsim_psf(RA,DEC,band,pointing,sca,
-                                     ref_path=coadd_img_path)
+                                     ref_path=ref_4k)
         sci_psf_path = rotate_psf(RA,DEC,sci_skysub_path,sci_imalign_path,
-                                  band,pointing,sca,ref_path=coadd_img_path)
-
-        # Make a 4088x4088 cutout of the coadded reference image that perfectly overlaps with 
-        # the science image. 
-        ref_4k_savepath = f'/work/lna18/imsub_out/coadd/cutouts_4k/{oid}_{band}_{pointing}_{sca}_coadd_4kcutout.fits'
-        ref_4k = stampmaker(RA,DEC,coadd_img_path,shape=np.array([4088,4088]),savepath=ref_4k_savepath)
+                                  band,pointing,sca,ref_path=ref_4k,force=True)
 
         # First convolves reference PSF on science image. 
         # Then, convolves science PSF on reference image. 
-        convolvedpaths = crossconvolve(sci_imalign_path, sci_psf_path, ref_4k, coadd_psf_path)
+        convolvedpaths = crossconvolve(sci_imalign_path, sci_psf_path, ref_4k, coadd_psf_path, force=True)
 
         # Make difference image, decorrelation kernel, and decorrelated difference image. 
+        print('CONVOLVEDPATHS')
+        print(convolvedpaths)
         scipath, refpath = convolvedpaths
         print('SCIPATH AFTER CROSS CONVOLVE')
         print(scipath)
         print('REFPATH AFTER CROSS CONVOLVE')
         print(refpath)
-        diff, soln = difference(scipath, refpath, sci_psf_path, coadd_psf_path, backend='Numpy')
-        dcker_path = decorr_kernel(scipath, refpath, sci_psf_path, coadd_psf_path, diff, soln)
+        diff, soln = difference(scipath, refpath, sci_psf_path, coadd_psf_path, backend='Numpy', force=True)
+        print('DIFFERENCE IMAGE PATH')
+        print(diff)        
+        # NOTE: Decorrelation kernel only uses the science and reference images to calculate
+        # sky background, so don't use the cross-convolved images. Use the sky-subtracted ones.
+        # (And in the case of the science image, the aligned and sky-subtracted one.)
+        dcker_path = decorr_kernel(sci_imalign_path, ref_4k, sci_psf_path, coadd_psf_path, diff, soln)
+        print('DECORR KERNEL PATH')
+        print(dcker_path)
         dcimg_path = decorr_img(diff, dcker_path)
+        print('DECORR IMAGE PATH')
+        print(dcimg_path)
 
         # Save difference image stamps. 
         decorr_savepath = f'/work/lna18/imsub_out/subtract/decorr/finalstamps/1K/finalstamp_{RA}_{DEC}_Roman_TDS_simple_model_{band}_{pointing}_{sca}.fits'
