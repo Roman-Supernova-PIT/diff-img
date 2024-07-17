@@ -16,8 +16,7 @@ import astropy.units as u
 from galsim import roman
 
 # IMPORTS Internal:
-from phrosty.utils import read_truth_txt, get_mjd, get_transient_radec, get_transient_mjd
-from phrosty.utils import transform_to_wcs
+from phrosty.utils import read_truth_txt, get_mjd, get_transient_radec, get_transient_mjd, transform_to_wcs, get_mjd_info
 from phrosty.photometry import ap_phot, psfmodel, psf_phot, crossmatch
 
 ###########################################################################
@@ -65,14 +64,6 @@ start, end = get_transient_mjd(oid)
 
 ###########################################################################
 
-# oid = 20202893
-# ra = 8.037774
-# dec = -42.752337
-
-# oid = 20172782
-# ra = 7.551093401915147
-# dec = -44.80718106491529
-
 coord = SkyCoord(ra=ra*u.deg, dec=dec*u.deg)
 
 exptime = {'F184': 901.175,
@@ -109,19 +100,22 @@ def lc(oid, band):
     tab = Table.read(f'/hpc/group/cosmology/lna18/roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_instances_nomjd.csv')
     tab = tab[tab['filter'] == band]
     tab.sort('pointing')
-    ref_pointing = tab[0]['pointing']
-    ref_sca = tab[0]['sca']
-    # ref_path = f'/work/lna18/imsub_out/skysub/skysub_Roman_TDS_simple_model_{band}_{ref_pointing}_{ref_sca}.fits'
-    ref_path = f'/work/lna18/imsub_out/coadd/{oid}_{band}_{ref_pointing}_{ref_sca}_coadd.fits'
-    with fits.open(ref_path) as ref_hdu:
-        ref_wcs = WCS(ref_hdu[0].header)
-    
-    tab = tab[1:] # Because the first one is the reference image. 
+
+    # First, limit to images that contain the SN. 
+    in_tab = get_mjd_info(start,end,return_inverse=False)
+    in_rows = np.where(np.isin(tab['pointing'],in_tab['pointing']))[0]
+    in_tab = tab[in_rows]
+
     gs_zpt = roman.getBandpasses()[band].zeropoint
     
-    for row in tab: 
+    for row in in_tab: 
         pointing, sca = row['pointing'], row['sca']
         print(band, get_mjd(pointing), pointing, sca)
+
+        # Get reference image. 
+        ref_path = f'/work/lna18/imsub_out/coadd/cutouts_4k/{oid}_{band}_{pointing}_{sca}_coadd_4kcutout.fits'
+        with fits.open(ref_path) as ref_hdu:
+            ref_wcs = WCS(ref_hdu[0].header)
 
         # Decorrelated: 
         zp_imgdir = f'/work/lna18/imsub_out/science/decorr_conv_align_skysub_Roman_TDS_simple_model_{band}_{pointing}_{sca}.fits'
