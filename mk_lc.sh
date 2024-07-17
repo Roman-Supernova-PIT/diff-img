@@ -6,7 +6,7 @@
 #SBATCH --partition=cosmology
 #SBATCH --mail-user=lauren.aldoroty@duke.edu
 #SBATCH --mail-type=ALL
-#SBATCH --array=1-7
+#SBATCH --array=5
 
 # Activate conda environment
 source ~/.bashrc

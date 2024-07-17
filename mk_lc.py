@@ -124,11 +124,9 @@ def lc(oid, band):
         print(band, get_mjd(pointing), pointing, sca)
 
         # Decorrelated: 
-        # zp_imgdir = f'/work/lna18/imsub_out/science/decorr_conv_align_skysub_Roman_TDS_simple_model_{band}_{pointing}_{sca}.fits'
-        # sndir = f'/work/lna18/imsub_out/subtract/decorr/decorr_diff_conv_align_skysub_Roman_TDS_simple_model_{band}_{pointing}_{sca}.fits'
-        # psf_imgdir = f'/work/lna18/imsub_out/psf_final/conv_align_skysub_Roman_TDS_simple_model_{band}_{pointing}_{sca}.sfft_DCSCI.DeCorrelated.dcPSFFStack.fits'
-
-        # zp_imgdir = f''
+        zp_imgdir = f'/work/lna18/imsub_out/science/decorr_conv_align_skysub_Roman_TDS_simple_model_{band}_{pointing}_{sca}.fits'
+        sndir = f'/work/lna18/imsub_out/subtract/decorr/decorr_diff_conv_align_skysub_Roman_TDS_simple_model_{band}_{pointing}_{sca}.fits'
+        psf_imgdir = f'/work/lna18/imsub_out/psf_final/conv_align_skysub_Roman_TDS_simple_model_{band}_{pointing}_{sca}.sfft_DCSCI.DeCorrelated.dcPSFFStack.fits'
 
         # Sky-subtracted field for generating the ZP.
         zp_hdu = fits.open(zp_imgdir)
@@ -223,9 +221,17 @@ def lc(oid, band):
 
     results = Table([filters,pointings,scas,mjds,ra_init,dec_init,x_init,y_init,ra_fit,dec_fit,x_fit,y_fit,mags,magerr,fluxes,fluxerrs,zpts],
                  names=['filter','pointing','sca','mjd','ra_init','dec_init','x_init','y_init','ra_fit','dec_fit','x_fit','y_fit','mag','magerr','flux','fluxerr','zpt'])
-    savepath = f'/hpc/group/cosmology/lna18/roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_{band}_lc.csv'
+    savepath = f'/hpc/group/cosmology/lna18/roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_{band}_lc_coadd.csv'
     results.write(savepath, format='csv', overwrite=True)
+
+def main(argv):
+    o_id = int(sys.argv[1])
+    # b = str(sys.argv[2])
+    lc(o_id,band)
     
+if __name__ == '__main__':
+    main(sys.argv)
+
 # MAKE ONE LC PLOT
 # Read in truth:
 truthpath = f'/hpc/group/cosmology/phy-lsst/work/dms118/roman_imsim/filtered_data/filtered_data_{oid}.txt'
@@ -244,7 +250,7 @@ truth.sort('mjd')
 truthfunc = interp1d(truth['mjd'], truth['mag'], bounds_error=False)
 
 # Get photometry.
-phot_path = f'/hpc/group/cosmology/lna18/roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_{band}_lc.csv'
+phot_path = f'/hpc/group/cosmology/lna18/roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_{band}_lc_coadd.csv'
 phot = Table.read(phot_path)
 phot.sort('mjd')
 
@@ -270,7 +276,7 @@ ax[0].set_ylabel(band)
 ax[1].set_xlabel('MJD')
 
 fig.suptitle(oid,y=0.91)
-plt.savefig(f'figs/{oid}_{band}.png', dpi=300, bbox_inches='tight')
+plt.savefig(f'figs/{oid}_{band}_coadd.png', dpi=300, bbox_inches='tight')
 
 
 # for b in bands:
@@ -372,13 +378,5 @@ plt.savefig(f'figs/{oid}_{band}.png', dpi=300, bbox_inches='tight')
 # fig.suptitle(oid,y=0.91)
 
 # plt.savefig(f'/hpc/group/cosmology/lna18/roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_lc.png', dpi=300, bbox_inches='tight')
-
-def main(argv):
-    o_id = int(sys.argv[1])
-    # b = str(sys.argv[2])
-    lc(o_id,band)
-    
-if __name__ == '__main__':
-    main(sys.argv)
 
 print('FINISHED!')
