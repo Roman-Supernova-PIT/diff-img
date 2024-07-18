@@ -2,6 +2,8 @@
 import argparse
 import os
 import sys
+import warnings
+
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
@@ -182,8 +184,10 @@ def calc_sn_photometry(img, wcs, psf, coord):
     # Photometry on the SN itself.
     px_coords = wcs.world_to_pixel(coord)
     forcecoords = Table([[float(px_coords[0])], [float(px_coords[1])]], names=["x", "y"])
-    init_sn = ap_phot(img.data, forcecoords, ap_r=4)
-    sn_phot = psf_phot(img.data, psf, init_sn, wcs=wcs, forced_phot=True)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", "Input data contains unmasked non-finite values")
+        init_sn = ap_phot(img.data, forcecoords, ap_r=4)
+        sn_phot = psf_phot(img.data, psf, init_sn, wcs=wcs, forced_phot=True)
 
     print("SN results from SN photometry:", sn_phot["flux_fit"])
 
@@ -299,8 +303,12 @@ def make_lc(
         # Do PSF photometry to get the zero point.
         # Build PSF.
         psf = psfmodel(psf_img)
-        init_params = ap_phot(zp_img, stars)
-        res = psf_phot(zp_img, psf, init_params, wcs=zp_wcs)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", "Input data contains unmasked non-finite values")
+            init_params = ap_phot(zp_img, stars)
+            res = psf_phot(zp_img, psf, init_params, wcs=zp_wcs)
+
         # MWV: 2024-07-12:  What is this printing?
         # The instrumental flux for the SN?
         print("SN results from star photometry:", res[-1]["flux_fit"])
