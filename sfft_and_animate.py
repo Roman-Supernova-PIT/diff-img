@@ -174,11 +174,8 @@ def sfft_and_animate(oid,band):
         # Retrieve and rotate PSFs for PSF coaddition.
         template_psf_list = []
         for i, row in enumerate(out_tab):
-            psf = rotate_psf(RA,DEC,skysub_ref,imalign_ref,
-                            sci_band=band,
-                            sci_pointing=out_tab['pointing'][i],
-                            sci_sca=out_tab['sca'][i],
-                            ref_path=ref_4k)
+            psf = get_imsim_psf(RA,DEC,out_tab['filter'][i],out_tab['pointing'][i],
+                                out_tab['sca'][i])
             template_psf_list.append(psf)
 
         coadd_psf_path, psfpaths = swarp_coadd_img(imgpath_list=template_psf_list,
