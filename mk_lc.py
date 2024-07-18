@@ -71,6 +71,7 @@ def plot_star_truth_vs_fit_mag(
         dpi=300,
         bbox_inches="tight",
     )
+    plt.close()
 
 
 def calc_sn_photometry(img, wcs, psf, coord):
@@ -339,6 +340,7 @@ def make_lc_plot(oid, band, start, end, lc_filename, plot_filename):
 
     fig.suptitle(oid, y=0.91)
     plt.savefig(plot_filename, dpi=300, bbox_inches="tight")
+    plt.close()
 
 
 def run(oid, band, inputdir=".", outputdir="."):
