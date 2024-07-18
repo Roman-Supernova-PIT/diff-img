@@ -21,6 +21,72 @@ from phrosty.photometry import ap_phot, psfmodel, psf_phot, crossmatch
 
 ###########################################################################
 
+
+def get_star_truth_coordinates_in_aligned_images(band, pointing, sca, ref_wcs, nx=4088, ny=4088):
+        """
+        Get coordinates of stars in the aligned image.
+
+        Uses the truth table from the simulation to get RA, Dec.
+        Then the WCS from the image to transform to x, y.
+        """
+        orig_tab = read_truth_txt(band=band, pointing=pointing, sca=sca)
+        orig_tab["x"].name, orig_tab["y"].name = "x_orig", "y_orig"
+        orig_tab["mag"].name = "mag_truth"
+        orig_tab["mag_truth"] = (
+            -2.5 * np.log10(orig_tab["flux"]) + 2.5 * np.log10(exptime[band] * area_eff) + gs_zpt
+        )
+        worldcoords = SkyCoord(ra=orig_tab['ra']*u.deg, dec=orig_tab['dec']*u.deg)
+        x, y = skycoord_to_pixel(worldcoords, wcs)
+
+        alltab = orig_tab.copy()
+        alltab["x"] = x
+        alltab["y"] = y
+
+        star_idx = np.where(orig_tab["obj_type"] == "star")[0]
+        sn_idx = np.where(orig_tab["object_id"] == oid)[0]
+        idx = np.append(star_idx, sn_idx)
+
+        stars = alltab[idx]
+        stars = stars[np.logical_and(stars["x"] < 4088, stars["x"] > 0)]
+        stars = stars[np.logical_and(stars["y"] < 4088, stars["y"] > 0)]
+
+        return stars
+
+
+def plot_star_truth_vs_fit_mag(star_truth_mags, star_fit_mags, zpt, plot_filename="zpt.png", figsize=(6, 6)):
+        """
+        Plot the star truth mag versus the measured mag and calculated zeropoint.
+        """
+        plt.figure(figsize=figisze)
+        plt.plot(star_truth_mags, star_fit_mags + zpt - star_truth_mags, linestyle="", marker="o")
+        plt.axhline(0, color="k", linestyle="--")
+        plt.xlabel("Truth")
+        plt.ylabel("Fit + zpt - truth")
+        plt.title(f"{band} {pointing} {sca}")
+        plt.savefig(
+            plot_filename,
+            dpi=300,
+            bbox_inches="tight",
+        )
+
+
+def calc_sn_photometry(sub_img, sub_wcs):
+    """
+    Do photometry on the SN itself
+    """
+    # Photometry on the SN itself.
+    px_coords = sub_wcs.world_to_pixel(coord)
+    forcecoords = Table([[float(px_coords[0])], [float(px_coords[1])]], names=["x", "y"])
+    init_sn = ap_phot(sub_img.data, forcecoords, ap_r=4)
+    res_sn = psf_phot(sub_img.data, psf, init_sn, wcs=sub_wcs, forced_phot=True)
+
+    print("SN results from SN photometry:", res_sn["flux_fit"])
+
+    mag = -2.5 * np.log10(res_sn["flux_fit"][0])
+    mag_err = np.sqrt((1.09 / res_sn["flux_fit"][0] ** 2 * res_sn["flux_err"][0] ** 2))
+
+    return mag, mag_err
+
 def make_lc(
     oid, band, exptime, coord, area_eff, infodir="/hpc/group/cosmology/lna18", workdir=".", outdir="."
 ):
@@ -103,23 +169,11 @@ def make_lc(
         psf_hdu = fits.open(psf_imgdir)
         psf_img = psf_hdu[0].data
 
-        # Get coordinates of stars in the aligned image.
-        orig_tab = read_truth_txt(band=band, pointing=pointing, sca=sca)
-        orig_tab["x"].name, orig_tab["y"].name = "x_orig", "y_orig"
-        orig_tab["mag"].name = "mag_truth"
-        orig_tab["mag_truth"] = (
-            -2.5 * np.log10(orig_tab["flux"]) + 2.5 * np.log10(exptime[band] * area_eff) + gs_zpt
-        )
-        transf_tab = transform_to_wcs(ref_wcs, band=band, pointing=pointing, sca=sca)
-        star_idx = np.where(orig_tab["obj_type"] == "star")[0]
-        sn_idx = np.where(orig_tab["object_id"] == oid)[0]
-        idx = np.append(star_idx, sn_idx)
-        alltab = hstack([orig_tab, transf_tab])
-        stars = alltab[idx]
-        stars = stars[np.logical_and(stars["x"] < 4088, stars["x"] > 0)]
-        stars = stars[np.logical_and(stars["y"] < 4088, stars["y"] > 0)]
+        stars = get_star_truth_coordinates_in_aligned_images(band, pointing, sca, ref_wcs, nx=4088, ny=4088)
 
         # Have to clean out the rows where the value is centered on a NaN.
+        # MWV: 2024-07-12  Why?  I mean, why do this based on central pixel
+        # instead of waiting till you get the photometry results and on that.
         cutouts = [
             Cutout2D(zp_img, (x, y), wcs=zp_wcs, size=50, mode="partial").data
             for (x, y) in zip(stars["x"], stars["y"])
@@ -132,6 +186,8 @@ def make_lc(
         psf = psfmodel(psf_img)
         init_params = ap_phot(zp_img, stars)
         res = psf_phot(zp_img, psf, init_params, wcs=zp_wcs)
+        # MWV: 2024-07-12:  What is this printing?
+        # The instrumental flux for the SN?
         print("SN results from star photometry:", res[-1]["flux_fit"])
 
         # Crossmatch.
@@ -139,59 +195,42 @@ def make_lc(
 
         # Get the zero point.
         star_fit_mags = -2.5 * np.log10(xm["flux_fit"])
-        star_truth_mags = star_truth_mags = (
+        star_truth_mags = (
             -2.5 * np.log10(xm["flux_truth"].data) + 2.5 * np.log10(exptime[band] * area_eff) + gs_zpt
         )
         zpt_mask = np.logical_and(star_truth_mags > 20, star_truth_mags < 23)
         zpt = np.nanmedian(star_truth_mags[zpt_mask] - star_fit_mags[zpt_mask])
 
-        plt.figure(figsize=(6, 6))
-        plt.plot(star_truth_mags, star_fit_mags + zpt - star_truth_mags, linestyle="", marker="o")
-        plt.axhline(0, color="k", linestyle="--")
-        plt.xlabel("Truth")
-        plt.ylabel("Fit + zpt - truth")
-        plt.title(f"{band} {pointing} {sca}")
-        plt.savefig(
-            os.path.join(
-                outdir,
-                f"roman_sim_imgs/Roman_Rubin_Sims_2024/20172782/zpt_plots/zpt_{band}_{pointing}_{sca}.png",
-            ),
-            dpi=300,
-            bbox_inches="tight",
+        plot_filename = os.path.join(
+            outdir,
+            f"roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/zpt_plots/zpt_{band}_{pointing}_{sca}.png",
         )
+        plot_star_truth_vs_vit_mag(star_truth_mags, star_fit_mags, zpt, plot_filename=plot_filename)
 
         try:
-            # Photometry on the SN itself.
-            px_coords = sub_wcs.world_to_pixel(coord)
-            forcecoords = Table([[float(px_coords[0])], [float(px_coords[1])]], names=["x", "y"])
-            init_sn = ap_phot(sub_img.data, forcecoords, ap_r=4)
-            res_sn = psf_phot(sub_img.data, psf, init_sn, wcs=sub_wcs, forced_phot=True)
-
-            print("SN results from SN photometry:", res_sn["flux_fit"])
-
-            mag = -2.5 * np.log10(res_sn["flux_fit"][0])
-            mag_err = np.sqrt((1.09 / res_sn["flux_fit"][0] ** 2 * res_sn["flux_err"][0] ** 2))
-
-            filters.append(band)
-            pointings.append(pointing)
-            scas.append(sca)
-            mjds.append(get_mjd(pointing))
-            mags.append(mag)
-            magerr.append(mag_err)
-            fluxes.append(res_sn["flux_fit"][0])
-            fluxerrs.append(res_sn["flux_err"][0])
-            zpts.append(zpt)
-            ra_init.append(res_sn["ra_init"][0])
-            dec_init.append(res_sn["dec_init"][0])
-            x_init.append(res_sn["x_init"][0])
-            y_init.append(res_sn["y_init"][0])
-            ra_fit.append(res_sn["ra"][0])
-            dec_fit.append(res_sn["dec"][0])
-            x_fit.append(res_sn["x_fit"][0])
-            y_fit.append(res_sn["y_fit"][0])
-
+            mag, mag_err = calc_sn_photometry(sub_img, sub_wcs)
+        # MWV: 2024-07-12: Why is this the error we expect?
         except TypeError:
             print(f"fit_shape overlaps with edge for {band} {pointing} {sca}.")
+
+        filters.append(band)
+        pointings.append(pointing)
+        scas.append(sca)
+        mjds.append(get_mjd(pointing))
+        mags.append(mag)
+        magerr.append(mag_err)
+        fluxes.append(res_sn["flux_fit"][0])
+        fluxerrs.append(res_sn["flux_err"][0])
+        zpts.append(zpt)
+        ra_init.append(res_sn["ra_init"][0])
+        dec_init.append(res_sn["dec_init"][0])
+        x_init.append(res_sn["x_init"][0])
+        y_init.append(res_sn["y_init"][0])
+        ra_fit.append(res_sn["ra"][0])
+        dec_fit.append(res_sn["dec"][0])
+        x_fit.append(res_sn["x_fit"][0])
+        y_fit.append(res_sn["y_fit"][0])
+
 
     results = Table(
         [
