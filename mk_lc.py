@@ -124,15 +124,16 @@ def make_lc(
     tab = tab[tab["filter"] == band]
     tab.sort("pointing")
 
-    # First, limit to images that contain the SN. 
+    # First, limit to images that contain the SN.
+    start, end = get_transient_mjd(oid)
     in_tab = get_mjd_info(start,end,return_inverse=False)
     in_rows = np.where(np.isin(tab['pointing'],in_tab['pointing']))[0]
     in_tab = tab[in_rows]
 
     gs_zpt = roman.getBandpasses()[band].zeropoint
     
-    ref_pointing = tab[0]["pointing"]
-    ref_sca = tab[0]["sca"]
+    ref_pointing = in_tab[0]["pointing"]
+    ref_sca = in_tab[0]["sca"]
     # Get reference image. 
     ref_path = os.path.join(inputdir, f"imsub_out/coadd/cutouts_4k/{oid}_{band}_{ref_pointing}_{ref_sca}_coadd_4kcutout.fits")
     with fits.open(ref_path) as ref_hdu:
