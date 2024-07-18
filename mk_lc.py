@@ -204,7 +204,7 @@ def make_lc(
         # Get the zero point.
         star_fit_mags = -2.5 * np.log10(xm["flux_fit"])
         star_truth_mags = (
-            -2.5 * np.log10(xm["flux_truth"].data) + 2.5 * np.log10(exptime[band] * area_eff) + gs_zpt
+            -2.5 * np.log10(xm["flux_truth"].data) + 2.5 * np.log10(exptime * area_eff) + gs_zpt
         )
         zpt_mask = np.logical_and(star_truth_mags > 20, star_truth_mags < 23)
         zpt = np.nanmedian(star_truth_mags[zpt_mask] - star_fit_mags[zpt_mask])
