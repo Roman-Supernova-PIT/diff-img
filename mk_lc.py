@@ -23,52 +23,54 @@ from phrosty.photometry import ap_phot, psfmodel, psf_phot, crossmatch
 ###########################################################################
 
 
-def get_star_truth_coordinates_in_aligned_images(band, pointing, sca, ref_wcs, exptime, area_eff, zpt, n=4088, ny=4088):
-        """
-        Get coordinates of stars in the aligned image.
+def get_star_truth_coordinates_in_aligned_images(
+    band, pointing, sca, ref_wcs, exptime, area_eff, zpt, n=4088, ny=4088
+):
+    """
+    Get coordinates of stars in the aligned image.
 
-        Uses the truth table from the simulation to get RA, Dec.
-        Then the WCS from the image to transform to x, y.
-        """
-        orig_tab = read_truth_txt(band=band, pointing=pointing, sca=sca)
-        orig_tab["x"].name, orig_tab["y"].name = "x_orig", "y_orig"
-        orig_tab["mag"].name = "mag_truth"
-        orig_tab["mag_truth"] = (
-            -2.5 * np.log10(orig_tab["flux"]) + 2.5 * np.log10(exptime * area_eff) + zpt
-        )
-        worldcoords = SkyCoord(ra=orig_tab['ra']*u.deg, dec=orig_tab['dec']*u.deg)
-        x, y = skycoord_to_pixel(worldcoords, ref_wcs)
+    Uses the truth table from the simulation to get RA, Dec.
+    Then the WCS from the image to transform to x, y.
+    """
+    orig_tab = read_truth_txt(band=band, pointing=pointing, sca=sca)
+    orig_tab["x"].name, orig_tab["y"].name = "x_orig", "y_orig"
+    orig_tab["mag"].name = "mag_truth"
+    orig_tab["mag_truth"] = -2.5 * np.log10(orig_tab["flux"]) + 2.5 * np.log10(exptime * area_eff) + zpt
+    worldcoords = SkyCoord(ra=orig_tab["ra"] * u.deg, dec=orig_tab["dec"] * u.deg)
+    x, y = skycoord_to_pixel(worldcoords, ref_wcs)
 
-        alltab = orig_tab.copy()
-        alltab["x"] = x
-        alltab["y"] = y
+    alltab = orig_tab.copy()
+    alltab["x"] = x
+    alltab["y"] = y
 
-        star_idx = np.where(orig_tab["obj_type"] == "star")[0]
-        sn_idx = np.where(orig_tab["object_id"] == oid)[0]
-        idx = np.append(star_idx, sn_idx)
+    star_idx = np.where(orig_tab["obj_type"] == "star")[0]
+    sn_idx = np.where(orig_tab["object_id"] == oid)[0]
+    idx = np.append(star_idx, sn_idx)
 
-        stars = alltab[idx]
-        stars = stars[np.logical_and(stars["x"] < 4088, stars["x"] > 0)]
-        stars = stars[np.logical_and(stars["y"] < 4088, stars["y"] > 0)]
+    stars = alltab[idx]
+    stars = stars[np.logical_and(stars["x"] < 4088, stars["x"] > 0)]
+    stars = stars[np.logical_and(stars["y"] < 4088, stars["y"] > 0)]
 
-        return stars
+    return stars
 
 
-def plot_star_truth_vs_fit_mag(star_truth_mags, star_fit_mags, zpt, band, pointing, sca, plot_filename="zpt.png", figsize=(6, 6)):
-        """
-        Plot the star truth mag versus the measured mag and calculated zeropoint.
-        """
-        plt.figure(figsize=figsize)
-        plt.plot(star_truth_mags, star_fit_mags + zpt - star_truth_mags, linestyle="", marker="o")
-        plt.axhline(0, color="k", linestyle="--")
-        plt.xlabel("Truth")
-        plt.ylabel("Fit + zpt - truth")
-        plt.title(f"{band} {pointing} {sca}")
-        plt.savefig(
-            plot_filename,
-            dpi=300,
-            bbox_inches="tight",
-        )
+def plot_star_truth_vs_fit_mag(
+    star_truth_mags, star_fit_mags, zpt, band, pointing, sca, plot_filename="zpt.png", figsize=(6, 6)
+):
+    """
+    Plot the star truth mag versus the measured mag and calculated zeropoint.
+    """
+    plt.figure(figsize=figsize)
+    plt.plot(star_truth_mags, star_fit_mags + zpt - star_truth_mags, linestyle="", marker="o")
+    plt.axhline(0, color="k", linestyle="--")
+    plt.xlabel("Truth")
+    plt.ylabel("Fit + zpt - truth")
+    plt.title(f"{band} {pointing} {sca}")
+    plt.savefig(
+        plot_filename,
+        dpi=300,
+        bbox_inches="tight",
+    )
 
 
 def calc_sn_photometry(img, wcs, psf, coord):
@@ -89,6 +91,7 @@ def calc_sn_photometry(img, wcs, psf, coord):
     sn_phot["mag_err"] = mag_err
 
     return sn_phot
+
 
 def make_lc(
     oid, band, exptime, coord, area_eff, infodir="/hpc/group/cosmology/lna18", inputdir=".", outputdir="."
@@ -170,7 +173,9 @@ def make_lc(
         psf_hdu = fits.open(psf_imgdir)
         psf_img = psf_hdu[0].data
 
-        stars = get_star_truth_coordinates_in_aligned_images(band, pointing, sca, ref_wcs, exptime, area_eff, gs_zpt, nx=4088, ny=4088)
+        stars = get_star_truth_coordinates_in_aligned_images(
+            band, pointing, sca, ref_wcs, exptime, area_eff, gs_zpt, nx=4088, ny=4088
+        )
 
         # Have to clean out the rows where the value is centered on a NaN.
         # MWV: 2024-07-12  Why?  I mean, why do this based on central pixel
@@ -206,7 +211,9 @@ def make_lc(
             outputdir,
             f"roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/zpt_plots/zpt_{band}_{pointing}_{sca}.png",
         )
-        plot_star_truth_vs_fit_mag(star_truth_mags, star_fit_mags, zpt, band, pointing, sca, plot_filename=plot_filename)
+        plot_star_truth_vs_fit_mag(
+            star_truth_mags, star_fit_mags, zpt, band, pointing, sca, plot_filename=plot_filename
+        )
 
         try:
             sn_phot = calc_sn_photometry(sub_img, sub_wcs, psf, coord)
@@ -232,7 +239,6 @@ def make_lc(
         dec_fit.append(sn_phot["dec"][0])
         x_fit.append(sn_phot["x_fit"][0])
         y_fit.append(sn_phot["y_fit"][0])
-
 
     results = Table(
         [
