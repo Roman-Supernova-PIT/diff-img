@@ -134,17 +134,18 @@ def make_lc(
     
     ref_pointing = in_tab[0]["pointing"]
     ref_sca = in_tab[0]["sca"]
-    # Get reference image. 
-    ref_path = os.path.join(inputdir, f"imsub_out/coadd/cutouts_4k/{oid}_{band}_{ref_pointing}_{ref_sca}_coadd_4kcutout.fits")
-    with fits.open(ref_path) as ref_hdu:
-        ref_wcs = WCS(ref_hdu[0].header)
 
     tab = tab[1:]  # Because the first one is the reference image.
     gs_zpt = roman.getBandpasses()[band].zeropoint
 
-    for row in tab:
+    for row in in_tab:
         pointing, sca = row["pointing"], row["sca"]
         print(band, get_mjd(pointing), pointing, sca)
+
+        # Get reference image.
+        ref_path = os.path.join(inputdir, f"imsub_out/coadd/cutouts_4k/{oid}_{band}_{ref_pointing}_{ref_sca}_coadd_4kcutout.fits")
+        with fits.open(ref_path) as ref_hdu:
+            ref_wcs = WCS(ref_hdu[0].header)
 
         # Decorrelated:
         zp_imgdir = os.path.join(
