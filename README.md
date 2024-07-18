@@ -33,3 +33,9 @@ This then calls `mk_lc.py` with the SN ID (refered to as `oid` in the code).
 `mk_lc.py` takes the output from `sfft_and_animate.py` as input and makes a lightcurve from the subtracted images.
 It compares to the information in `/hpc/group/cosmology/phy-lsst/work/dms118/roman_imsim/`
 It writes output to hardcoded `/hpc/group/cosmology/lna18/roman_sim_imgs/Roman_Rubin_Sims_2024/` path with the SN ID.
+
+Example usage at the DCC
+Run on SNID 20172782 (yes, the SN IDs are 8-digit numbers beginning with 20, they are not dates), filter R062, with specified input directory.
+```
+python mk_lc.py 20172782 R062 --inputdir /work/lna18/
+```
