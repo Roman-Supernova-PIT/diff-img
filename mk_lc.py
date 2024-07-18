@@ -127,12 +127,12 @@ def make_lc(
 
     # First, limit to images that contain the SN.
     start, end = get_transient_mjd(oid)
-    in_tab = get_mjd_info(start,end,return_inverse=False)
-    in_rows = np.where(np.isin(tab['pointing'],in_tab['pointing']))[0]
+    in_tab = get_mjd_info(start, end, return_inverse=False)
+    in_rows = np.where(np.isin(tab["pointing"], in_tab["pointing"]))[0]
     in_tab = tab[in_rows]
 
     gs_zpt = roman.getBandpasses()[band].zeropoint
-    
+
     ref_pointing = in_tab[0]["pointing"]
     ref_sca = in_tab[0]["sca"]
 
@@ -144,7 +144,9 @@ def make_lc(
         print(band, get_mjd(pointing), pointing, sca)
 
         # Get reference image.
-        ref_path = os.path.join(inputdir, f"imsub_out/coadd/cutouts_4k/{oid}_{band}_{ref_pointing}_{ref_sca}_coadd_4kcutout.fits")
+        ref_path = os.path.join(
+            inputdir, f"imsub_out/coadd/cutouts_4k/{oid}_{band}_{ref_pointing}_{ref_sca}_coadd_4kcutout.fits"
+        )
         with fits.open(ref_path) as ref_hdu:
             ref_wcs = WCS(ref_hdu[0].header)
 
@@ -204,9 +206,7 @@ def make_lc(
 
         # Get the zero point.
         star_fit_mags = -2.5 * np.log10(xm["flux_fit"])
-        star_truth_mags = (
-            -2.5 * np.log10(xm["flux_truth"].data) + 2.5 * np.log10(exptime * area_eff) + gs_zpt
-        )
+        star_truth_mags = -2.5 * np.log10(xm["flux_truth"].data) + 2.5 * np.log10(exptime * area_eff) + gs_zpt
         zpt_mask = np.logical_and(star_truth_mags > 20, star_truth_mags < 23)
         zpt = np.nanmedian(star_truth_mags[zpt_mask] - star_fit_mags[zpt_mask])
 
@@ -285,7 +285,9 @@ def make_lc(
             "zpt",
         ],
     )
-    savepath = os.path.join(outputdir, f"roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_{band}_lc_coadd.csv")
+    savepath = os.path.join(
+        outputdir, f"roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_{band}_lc_coadd.csv"
+    )
     results.write(savepath, format="csv", overwrite=True)
 
     return savepath
