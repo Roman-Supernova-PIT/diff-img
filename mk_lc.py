@@ -288,6 +288,7 @@ def make_lc(
     savepath = os.path.join(
         outputdir, f"roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_{band}_lc_coadd.csv"
     )
+    os.makedirs(os.path.dirname(savepath), exist_ok=True)
     results.write(savepath, format="csv", overwrite=True)
 
     return savepath
@@ -373,6 +374,7 @@ def run(oid, band, inputdir=".", outputdir="."):
 
     lc_filename = make_lc(oid, band, exptime[band], coord, area_eff, inputdir=inputdir, outputdir=outputdir)
     plot_filename = os.path.join(outputdir, f"figs/{oid}_{band}.png")
+    os.makedirs(os.path.dirname(plot_filename), exist_ok=True)
     make_lc_plot(oid, band, start, end, lc_filename, plot_filename)
 
 
