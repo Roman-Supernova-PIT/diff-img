@@ -24,7 +24,7 @@ from phrosty.photometry import ap_phot, psfmodel, psf_phot, crossmatch
 
 
 def get_star_truth_coordinates_in_aligned_images(
-    band, pointing, sca, ref_wcs, exptime, area_eff, zpt, n=4088, ny=4088
+    oid, band, pointing, sca, ref_wcs, exptime, area_eff, zpt, nx=4088, ny=4088
 ):
     """
     Get coordinates of stars in the aligned image.
@@ -174,7 +174,7 @@ def make_lc(
         psf_img = psf_hdu[0].data
 
         stars = get_star_truth_coordinates_in_aligned_images(
-            band, pointing, sca, ref_wcs, exptime, area_eff, gs_zpt, nx=4088, ny=4088
+            oid, band, pointing, sca, ref_wcs, exptime, area_eff, gs_zpt, nx=4088, ny=4088
         )
 
         # Have to clean out the rows where the value is centered on a NaN.
