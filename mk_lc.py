@@ -421,7 +421,7 @@ def parse_and_run():
         "--slurm_array",
         default=False,
         action="store_true",
-        help="If we're a slurm array job we're going to process the band_idx from the SLURM_ARRAY_ID.",
+        help="If we're a slurm array job we're going to process the band_idx from the SLURM_ARRAY_TASK_ID.",
     )
 
     args = parser.parse_args()
@@ -430,7 +430,7 @@ def parse_and_run():
         args.band = parse_slurm()
 
     if args.band is None:
-        print("Must specify '--band' or SLURM_ARRAY_ID.")
+        print("Must specify either '--band' xor ('--slurm_array' and have SLURM_ARRAY_TASK_ID defined).")
         sys.exit()
 
     run(args.oid, args.band, inputdir=args.inputdir, outputdir=args.outputdir)
