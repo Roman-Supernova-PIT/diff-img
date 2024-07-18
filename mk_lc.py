@@ -213,6 +213,8 @@ def make_lc(
             outputdir,
             f"roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/zpt_plots/zpt_{band}_{pointing}_{sca}.png",
         )
+        # Make sure directory of plot_filename file exists.
+        os.makedirs(os.path.dirname(plot_filename), exist_ok=True)
         plot_star_truth_vs_fit_mag(
             star_truth_mags, star_fit_mags, zpt, band, pointing, sca, plot_filename=plot_filename
         )
