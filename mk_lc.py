@@ -35,6 +35,7 @@ def get_star_truth_coordinates_in_aligned_images(
     orig_tab = read_truth_txt(band=band, pointing=pointing, sca=sca)
     orig_tab["x"].name, orig_tab["y"].name = "x_orig", "y_orig"
     orig_tab["mag"].name = "mag_truth"
+    # "flux" should not be negative
     orig_tab["mag_truth"] = -2.5 * np.log10(orig_tab["flux"]) + 2.5 * np.log10(exptime * area_eff) + zpt
     worldcoords = SkyCoord(ra=orig_tab["ra"] * u.deg, dec=orig_tab["dec"] * u.deg)
     x, y = skycoord_to_pixel(worldcoords, ref_wcs)
@@ -186,7 +187,10 @@ def calc_sn_photometry(img, wcs, psf, coord):
 
     print("SN results from SN photometry:", sn_phot["flux_fit"])
 
-    mag = -2.5 * np.log10(sn_phot["flux_fit"][0])
+    # Suppress NaN warnings for negative flux, which is valid.
+    with np.errstate(invalid="ignore"):
+        mag = -2.5 * np.log10(sn_phot["flux_fit"][0])
+
     mag_err = (2.5 / np.log(10)) * np.abs(sn_phot["flux_err"][0] / sn_phot["flux_fit"][0])
     sn_phot["mag"] = mag
     sn_phot["mag_err"] = mag_err
@@ -305,7 +309,10 @@ def make_lc(
         xm = crossmatch(res, stars)
 
         # Get the zero point.
-        star_fit_mags = -2.5 * np.log10(xm["flux_fit"])
+        # Suppress NaN warnings for negative flux, which is valid.
+        with np.errstate(invalid="ignore"):
+            star_fit_mags = -2.5 * np.log10(xm["flux_fit"])
+        # "flux_truth" should not be negative
         star_truth_mags = -2.5 * np.log10(xm["flux_truth"].data) + 2.5 * np.log10(exptime * area_eff) + gs_zpt
         zpt_mask = np.logical_and(star_truth_mags > 20, star_truth_mags < 23)
         zpt = np.nanmedian(star_truth_mags[zpt_mask] - star_fit_mags[zpt_mask])
