@@ -16,7 +16,7 @@ import astropy.units as u
 from galsim import roman
 
 # IMPORTS Internal:
-from phrosty.utils import read_truth_txt, get_mjd, get_transient_radec, get_transient_mjd, transform_to_wcs, get_mjd_info
+from phrosty.utils import read_truth_txt, get_mjd, get_transient_radec, get_transient_mjd, get_mjd_info
 from phrosty.photometry import ap_phot, psfmodel, psf_phot, crossmatch
 
 ###########################################################################
