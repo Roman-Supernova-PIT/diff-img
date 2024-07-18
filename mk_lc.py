@@ -399,8 +399,9 @@ def parse_and_run():
         "oid", type=int, help="ID of transient.  Used to look up hard-coded information on transient."
     )
     parser.add_argument(
-        "band",
+        "--band",
         type=str,
+        default=None,
         choices=[None, "F184", "H158", "J129", "K213", "R062", "Y106", "Z087"],
         help="Filter to use.  None to use all available.  Overriding by --slurm_array.",
     )
@@ -427,6 +428,10 @@ def parse_and_run():
 
     if args.slurm_array:
         args.band = parse_slurm()
+
+    if args.band is None:
+        print("Must specify '--band' or SLURM_ARRAY_ID.")
+        sys.exit()
 
     run(args.oid, args.band, inputdir=args.inputdir, outputdir=args.outputdir)
     print("FINISHED!")

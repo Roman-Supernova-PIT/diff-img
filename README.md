@@ -37,5 +37,5 @@ It writes output to hardcoded `/hpc/group/cosmology/lna18/roman_sim_imgs/Roman_R
 Example usage at the DCC
 Run on SNID 20172782 (yes, the SN IDs are 8-digit numbers beginning with 20, they are not dates), filter R062, with specified input directory.
 ```
-python mk_lc.py 20172782 R062 --inputdir /work/lna18/
+python mk_lc.py 20172782 --band R062 --inputdir /work/lna18/
 ```
