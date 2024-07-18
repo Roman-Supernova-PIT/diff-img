@@ -10,7 +10,8 @@ from scipy.interpolate import interp1d
 from astropy.io import fits
 from astropy.coordinates import SkyCoord
 from astropy.wcs import WCS
-from astropy.table import Table, hstack
+from astropy.wcs.utils import skycoord_to_pixel
+from astropy.table import Table
 from astropy.nddata import Cutout2D
 import astropy.units as u
 from galsim import roman
@@ -22,7 +23,7 @@ from phrosty.photometry import ap_phot, psfmodel, psf_phot, crossmatch
 ###########################################################################
 
 
-def get_star_truth_coordinates_in_aligned_images(band, pointing, sca, ref_wcs, exptime, n=4088, ny=4088):
+def get_star_truth_coordinates_in_aligned_images(band, pointing, sca, ref_wcs, exptime, area_eff, zpt, n=4088, ny=4088):
         """
         Get coordinates of stars in the aligned image.
 
@@ -33,10 +34,10 @@ def get_star_truth_coordinates_in_aligned_images(band, pointing, sca, ref_wcs, e
         orig_tab["x"].name, orig_tab["y"].name = "x_orig", "y_orig"
         orig_tab["mag"].name = "mag_truth"
         orig_tab["mag_truth"] = (
-            -2.5 * np.log10(orig_tab["flux"]) + 2.5 * np.log10(exptime * area_eff) + gs_zpt
+            -2.5 * np.log10(orig_tab["flux"]) + 2.5 * np.log10(exptime * area_eff) + zpt
         )
         worldcoords = SkyCoord(ra=orig_tab['ra']*u.deg, dec=orig_tab['dec']*u.deg)
-        x, y = skycoord_to_pixel(worldcoords, wcs)
+        x, y = skycoord_to_pixel(worldcoords, ref_wcs)
 
         alltab = orig_tab.copy()
         alltab["x"] = x
@@ -53,11 +54,11 @@ def get_star_truth_coordinates_in_aligned_images(band, pointing, sca, ref_wcs, e
         return stars
 
 
-def plot_star_truth_vs_fit_mag(star_truth_mags, star_fit_mags, zpt, plot_filename="zpt.png", figsize=(6, 6)):
+def plot_star_truth_vs_fit_mag(star_truth_mags, star_fit_mags, zpt, band, pointing, sca, plot_filename="zpt.png", figsize=(6, 6)):
         """
         Plot the star truth mag versus the measured mag and calculated zeropoint.
         """
-        plt.figure(figsize=figisze)
+        plt.figure(figsize=figsize)
         plt.plot(star_truth_mags, star_fit_mags + zpt - star_truth_mags, linestyle="", marker="o")
         plt.axhline(0, color="k", linestyle="--")
         plt.xlabel("Truth")
@@ -70,22 +71,24 @@ def plot_star_truth_vs_fit_mag(star_truth_mags, star_fit_mags, zpt, plot_filenam
         )
 
 
-def calc_sn_photometry(sub_img, sub_wcs):
+def calc_sn_photometry(img, wcs, psf, coord):
     """
     Do photometry on the SN itself
     """
     # Photometry on the SN itself.
-    px_coords = sub_wcs.world_to_pixel(coord)
+    px_coords = wcs.world_to_pixel(coord)
     forcecoords = Table([[float(px_coords[0])], [float(px_coords[1])]], names=["x", "y"])
-    init_sn = ap_phot(sub_img.data, forcecoords, ap_r=4)
-    res_sn = psf_phot(sub_img.data, psf, init_sn, wcs=sub_wcs, forced_phot=True)
+    init_sn = ap_phot(img.data, forcecoords, ap_r=4)
+    sn_phot = psf_phot(img.data, psf, init_sn, wcs=wcs, forced_phot=True)
 
-    print("SN results from SN photometry:", res_sn["flux_fit"])
+    print("SN results from SN photometry:", sn_phot["flux_fit"])
 
-    mag = -2.5 * np.log10(res_sn["flux_fit"][0])
-    mag_err = np.sqrt((1.09 / res_sn["flux_fit"][0] ** 2 * res_sn["flux_err"][0] ** 2))
+    mag = -2.5 * np.log10(sn_phot["flux_fit"][0])
+    mag_err = (2.5 / np.log(10)) * np.abs(sn_phot["flux_err"][0] / sn_phot["flux_fit"][0])
+    sn_phot["mag"] = mag
+    sn_phot["mag_err"] = mag_err
 
-    return mag, mag_err
+    return sn_phot
 
 def make_lc(
     oid, band, exptime, coord, area_eff, infodir="/hpc/group/cosmology/lna18", inputdir=".", outputdir="."
@@ -167,7 +170,7 @@ def make_lc(
         psf_hdu = fits.open(psf_imgdir)
         psf_img = psf_hdu[0].data
 
-        stars = get_star_truth_coordinates_in_aligned_images(band, pointing, sca, ref_wcs, exptime, nx=4088, ny=4088)
+        stars = get_star_truth_coordinates_in_aligned_images(band, pointing, sca, ref_wcs, exptime, area_eff, gs_zpt, nx=4088, ny=4088)
 
         # Have to clean out the rows where the value is centered on a NaN.
         # MWV: 2024-07-12  Why?  I mean, why do this based on central pixel
@@ -200,34 +203,35 @@ def make_lc(
         zpt = np.nanmedian(star_truth_mags[zpt_mask] - star_fit_mags[zpt_mask])
 
         plot_filename = os.path.join(
-            outdir,
+            outputdir,
             f"roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/zpt_plots/zpt_{band}_{pointing}_{sca}.png",
         )
-        plot_star_truth_vs_vit_mag(star_truth_mags, star_fit_mags, zpt, plot_filename=plot_filename)
+        plot_star_truth_vs_fit_mag(star_truth_mags, star_fit_mags, zpt, band, pointing, sca, plot_filename=plot_filename)
 
         try:
-            mag, mag_err = calc_sn_photometry(sub_img, sub_wcs)
+            sn_phot = calc_sn_photometry(sub_img, sub_wcs, psf, coord)
         # MWV: 2024-07-12: Why is this the error we expect?
         except TypeError:
             print(f"fit_shape overlaps with edge for {band} {pointing} {sca}.")
+            continue
 
         filters.append(band)
         pointings.append(pointing)
         scas.append(sca)
         mjds.append(get_mjd(pointing))
-        mags.append(mag)
-        magerr.append(mag_err)
-        fluxes.append(res_sn["flux_fit"][0])
-        fluxerrs.append(res_sn["flux_err"][0])
+        mags.append(sn_phot["mag"])
+        magerr.append(sn_phot["mag_err"])
+        fluxes.append(sn_phot["flux_fit"][0])
+        fluxerrs.append(sn_phot["flux_err"][0])
         zpts.append(zpt)
-        ra_init.append(res_sn["ra_init"][0])
-        dec_init.append(res_sn["dec_init"][0])
-        x_init.append(res_sn["x_init"][0])
-        y_init.append(res_sn["y_init"][0])
-        ra_fit.append(res_sn["ra"][0])
-        dec_fit.append(res_sn["dec"][0])
-        x_fit.append(res_sn["x_fit"][0])
-        y_fit.append(res_sn["y_fit"][0])
+        ra_init.append(sn_phot["ra_init"][0])
+        dec_init.append(sn_phot["dec_init"][0])
+        x_init.append(sn_phot["x_init"][0])
+        y_init.append(sn_phot["y_init"][0])
+        ra_fit.append(sn_phot["ra"][0])
+        dec_fit.append(sn_phot["dec"][0])
+        x_fit.append(sn_phot["x_fit"][0])
+        y_fit.append(sn_phot["y_fit"][0])
 
 
     results = Table(
@@ -270,11 +274,13 @@ def make_lc(
             "zpt",
         ],
     )
-    savepath = os.path.join(outdir, f"roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_{band}_lc_coadd.csv")
+    savepath = os.path.join(outputdir, f"roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_{band}_lc_coadd.csv")
     results.write(savepath, format="csv", overwrite=True)
 
+    return savepath
 
-def make_lc_plot(oid, band, start, end, lcdir):
+
+def make_lc_plot(oid, band, start, end, lc_filename, plot_filename):
     # MAKE ONE LC PLOT
     # Read in truth:
     truthpath = f"/hpc/group/cosmology/phy-lsst/work/dms118/roman_imsim/filtered_data/filtered_data_{oid}.txt"
@@ -293,7 +299,7 @@ def make_lc_plot(oid, band, start, end, lcdir):
     truthfunc = interp1d(truth["mjd"], truth["mag"], bounds_error=False)
 
     # Get photometry.
-    phot_path = os.path.join(lcdir, f"roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_{band}_lc.csv")
+    phot_path = os.path.join(lc_filename)
     phot = Table.read(phot_path)
     phot.sort("mjd")
 
@@ -322,7 +328,7 @@ def make_lc_plot(oid, band, start, end, lcdir):
     ax[1].set_xlabel("MJD")
 
     fig.suptitle(oid, y=0.91)
-    plt.savefig(os.path.join(outputdir, f"figs/{oid}_{band}.png"), dpi=300, bbox_inches="tight")
+    plt.savefig(plot_filename, dpi=300, bbox_inches="tight")
 
 
 def run(oid, band, inputdir=".", outputdir="."):
@@ -351,8 +357,9 @@ def run(oid, band, inputdir=".", outputdir="."):
 
     area_eff = roman.collecting_area
 
-    make_lc(oid, band, exptime[band], coord, area_eff, inputdir=inputdir, outputdir=outputdir)
-    make_lc_plot(oid, band, start, end, inputdir=inputdir, outputdir=outputdir)
+    lc_filename = make_lc(oid, band, exptime[band], coord, area_eff, inputdir=inputdir, outputdir=outputdir)
+    plot_filename = os.path.join(outputdir, f"figs/{oid}_{band}.png")
+    make_lc_plot(oid, band, start, end, lc_filename, plot_filename)
 
 
 def parse_slurm():
