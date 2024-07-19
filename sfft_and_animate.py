@@ -210,10 +210,8 @@ def sfft_and_animate(oid,band):
             continue
 
         # Get science image PSF and rotate it according to the coadded reference. 
-        sci_imsim_psf = get_imsim_psf(RA,DEC,band,pointing,sca,
-                                     ref_path=ref_4k)
-        sci_psf_path = rotate_psf(RA,DEC,sci_skysub_path,sci_imalign_path,
-                                  band,pointing,sca,ref_path=ref_4k,force=True)
+        sci_imsim_psf = get_imsim_psf(RA,DEC,band,pointing,sca)
+        sci_psf_path = rotate_psf(RA,DEC,sci_imsim_psf,ref_4k)
 
         # First convolves reference PSF on science image. 
         # Then, convolves science PSF on reference image. 
