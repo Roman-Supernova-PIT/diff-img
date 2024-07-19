@@ -74,6 +74,106 @@ def plot_star_truth_vs_fit_mag(
     plt.close()
 
 
+def plot_lc_with_all_bands(oid):
+    """
+    Plot a LC with all bands for a SN.
+    """
+    fig = plt.figure(figsize=(14,16))
+    lcidx = [0,1,2,6,7,8,12]
+    resididx = [3,4,5,9,10,11,15]
+
+    bands = ['R062','Z087','Y106','J129','H158','F184','K213']
+    truthbands = ['R','Z','Y','J','H','F','K']
+    colors=['mediumslateblue','darkturquoise','lightgreen','mediumvioletred','darkorange','darkgrey','black']
+    cb_p = 0
+    cb_t = 0
+
+    # Read in truth:
+    truthpath = f'/hpc/group/cosmology/phy-lsst/work/dms118/roman_imsim/filtered_data/filtered_data_{oid}.txt'
+    truth = Table.read(truthpath, names=['mjd','filter','mag'], format='ascii')[:-1]
+
+    truth['mjd'] = [row['mjd'].replace('(','') for row in truth]
+    truth['mag'] = [row['mag'].replace(')','') for row in truth]
+
+    truth['mjd'] = truth['mjd'].astype(float)
+    truth['mag'] = truth['mag'].astype(float)
+    truth['filter'] = [filt.upper() for filt in truth['filter']]
+
+    gs = GridSpec(nrows=6,ncols=3, height_ratios=[1,.33,1,.33,1,.33],width_ratios=[1,1,1],wspace=0,hspace=0)
+
+    for i, g in enumerate(gs):
+        ax = fig.add_subplot(g)
+
+        if i in lcidx:
+            band = bands[cb_p]
+            color = colors[cb_p]
+            tband = truthbands[cb_p]
+
+            # Read in photometry:
+            path = f'/hpc/group/cosmology/lna18/roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_{band}_lc.csv'
+            lc = Table.read(path, format='csv')
+
+            tlc = truth[truth['filter'] == tband]
+            tlc.sort('mjd')
+
+            ax.errorbar(lc['mjd'], lc['mag'] - lc['zpt'], lc['magerr'],
+                        marker='o', linestyle='', color=color, label=f'{band}')
+            ax.plot(tlc['mjd'], tlc['mag'], color=color)
+            ax.axvline(start, color='k', linestyle='--')
+            ax.axvline(end, color='k', linestyle='--')
+    #         ax.set_xlim(start,start+200)
+            ax.set_xlim(start,end)
+            ax.set_ylim(29,22)
+            ax.legend(loc='upper right',fontsize='small')
+
+            cb_p += 1
+
+        if i in resididx:
+            band = bands[cb_t]
+            color = colors[cb_t]
+            tband = truthbands[cb_t]
+
+            # Read in photometry:
+            path = f'/hpc/group/cosmology/lna18/roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_{band}_lc.csv'
+            lc = Table.read(path, format='csv')
+
+            # Read in truth:
+            tlc = truth[truth['filter'] == tband]
+            tlc.sort('mjd')
+
+            truthfunc = interp1d(tlc['mjd'], tlc['mag'], bounds_error=False)
+            resids = lc['mag'] - lc['zpt'] - truthfunc(lc['mjd'])
+
+            ax.errorbar(lc['mjd'], resids, marker='o', linestyle='', color=color)
+
+            ax.axhline(0,color='k',linestyle='--')
+            ax.set_xlim(start,end)
+
+            cb_t += 1
+
+    for ax in fig.get_axes():
+        ax.tick_params(bottom=False,labelbottom=False,left=False,labelleft=False)
+
+    fig.get_axes()[0].tick_params(left=True,labelleft=True)
+    fig.get_axes()[3].tick_params(left=True,labelleft=True)
+    fig.get_axes()[6].tick_params(left=True,labelleft=True)
+    fig.get_axes()[9].tick_params(left=True,labelleft=True)
+    fig.get_axes()[12].tick_params(left=True,labelleft=True)
+    fig.get_axes()[15].tick_params(left=True,labelleft=True)
+
+    fig.get_axes()[15].tick_params(bottom=True,labelbottom=True)
+    fig.get_axes()[16].tick_params(bottom=True,labelbottom=True)
+    fig.get_axes()[17].tick_params(bottom=True,labelbottom=True)
+
+    for i in [6,12]:
+        ax = fig.get_axes()[i]
+        plt.setp(ax.get_yticklabels()[0], visible=False)
+
+    fig.suptitle(oid,y=0.91)
+
+    plt.savefig(f'/hpc/group/cosmology/lna18/roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_lc.png', dpi=300, bbox_inches='tight')
+
+
 def calc_sn_photometry(img, wcs, psf, coord):
     """
     Do photometry on the SN itself
