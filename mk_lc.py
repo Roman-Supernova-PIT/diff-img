@@ -184,8 +184,10 @@ def calc_sn_photometry(img, wcs, psf, coord):
     # Photometry on the SN itself.
     px_coords = wcs.world_to_pixel(coord)
     forcecoords = Table([[float(px_coords[0])], [float(px_coords[1])]], names=["x", "y"])
+    # Photometry is going to give warnings when it sees some NaNs in the images
+    # We expect that to happen, so put in context manager to ignore.
     with warnings.catch_warnings():
-        warnings.simplefilter("ignore", "Input data contains unmasked non-finite values")
+        warnings.simplefilter("ignore")
         init_sn = ap_phot(img.data, forcecoords, ap_r=4)
         sn_phot = psf_phot(img.data, psf, init_sn, wcs=wcs, forced_phot=True)
 
@@ -304,8 +306,10 @@ def make_lc(
         # Build PSF.
         psf = psfmodel(psf_img)
 
+        # Photometry is going to give warnings when it sees some NaNs in the images
+        # We expect that to happen, so put in context manager to ignore.
         with warnings.catch_warnings():
-            warnings.simplefilter("ignore", "Input data contains unmasked non-finite values")
+            warnings.simplefilter("ignore")
             init_params = ap_phot(zp_img, stars)
             res = psf_phot(zp_img, psf, init_params, wcs=zp_wcs)
 
