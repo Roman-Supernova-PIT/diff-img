@@ -128,7 +128,8 @@ def sfft_and_animate(oid,band):
     # Previously aligned to filepaths[0]. 
     coadd_img_path, coadd_img_paths_all = swarp_coadd_img(imgpath_list=skysub_ref,
                                                           refpath=skysub_ref_init[0],
-                                                          out_name=f'{oid}_{band}_{refvisit}_{refsca}_coadd.fits')
+                                                          out_name=f'{oid}_{band}_{refvisit}_{refsca}_coadd.fits',
+                                                          subdir='coadd')
     print('Template image successfully coadded.')
 
     # coadd_psf_path = swarp_coadd_psf(RA,DEC,skysub_ref,imalign_ref,
@@ -173,15 +174,14 @@ def sfft_and_animate(oid,band):
 
         # Retrieve and rotate PSFs for PSF coaddition.
         template_psf_list = []
-        for i, row in enumerate(out_tab):
-            psf = get_imsim_psf(RA,DEC,out_tab['filter'][i],out_tab['pointing'][i],
-                                out_tab['sca'][i])
+        for row in out_tab:
+            psf = get_imsim_psf(RA,DEC,row['filter'],row['pointing'],row['sca'])
             template_psf_list.append(psf)
 
-        coadd_psf_path, psfpaths = swarp_coadd_img(imgpath_list=template_psf_list,
+        coadd_psf_path, psfpaths = swarp_coadd(imgpath_list=template_psf_list,
                                                    refpath=ref_4k,
                                                    out_name=f'{oid}_{band}_{pointing}_{sca}_coadd_psf.fits',
-                                                   psf=True)
+                                                   subdir='coadd_psf')
         print('Template PSF succesfully coadded.')
         with fits.open(coadd_psf_path) as hdu:
             coadd_psf_img = hdu[0].data
