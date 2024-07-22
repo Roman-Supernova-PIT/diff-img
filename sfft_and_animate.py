@@ -126,7 +126,7 @@ def sfft_and_animate(oid,band):
     # if not os.path.exists(coadd_savepath):
     # Eventually don't want to rebuild them every time, but for now, maybe yeah you do. 
     # Previously aligned to filepaths[0]. 
-    coadd_img_path, coadd_img_paths_all = swarp_coadd_img(imgpath_list=skysub_ref,
+    coadd_img_path, coadd_img_paths_all = swarp_coadd(imgpath_list=skysub_ref,
                                                           refpath=skysub_ref_init[0],
                                                           out_name=f'{oid}_{band}_{refvisit}_{refsca}_coadd.fits',
                                                           subdir='coadd')
@@ -175,7 +175,7 @@ def sfft_and_animate(oid,band):
         # Retrieve and rotate PSFs for PSF coaddition.
         template_psf_list = []
         for row in out_tab:
-            psf = get_imsim_psf(RA,DEC,row['filter'],row['pointing'],row['sca'])
+            psf = get_imsim_psf(RA,DEC,row['filter'],row['pointing'],row['sca'],size=31)
             template_psf_list.append(psf)
 
         coadd_psf_path, psfpaths = swarp_coadd(imgpath_list=template_psf_list,
@@ -211,7 +211,7 @@ def sfft_and_animate(oid,band):
 
         # Get science image PSF and rotate it according to the coadded reference. 
         sci_imsim_psf = get_imsim_psf(RA,DEC,band,pointing,sca)
-        sci_psf_path = rotate_psf(RA,DEC,sci_imsim_psf,ref_4k)
+        sci_psf_path = rotate_psf(RA,DEC,sci_imsim_psf,ref_4k,force=True)
 
         # First convolves reference PSF on science image. 
         # Then, convolves science PSF on reference image. 
