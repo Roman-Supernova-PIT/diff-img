@@ -132,10 +132,6 @@ def sfft_and_animate(oid,band):
                                                           subdir='coadd')
     print('Template image successfully coadded.')
 
-    # coadd_psf_path = swarp_coadd_psf(RA,DEC,skysub_ref,imalign_ref,
-    #                                     out_tab,coadd_img_path,
-    #                                     out_name=f'{oid}_{band}_{refvisit}_{refsca}_coadd_psf.fits')
-    # print('Template PSF succesfully coadded.')
     # Save PNGs of the coadded stuff.
     with fits.open(coadd_img_path) as hdu:
         coadd_img = hdu[0].data
