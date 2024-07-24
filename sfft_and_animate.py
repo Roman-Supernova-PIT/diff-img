@@ -67,6 +67,11 @@ def check_overlap(ra,dec,temp_path,sci_path,overlap_size=500,verbose=False):
         coord = SkyCoord(ra=ra*u.deg,dec=dec*u.deg)
         ref_cutout = Cutout2D(temp_img,coord,overlap_size,wcs=temp_wcs,mode='strict')
 
+        if verbose:
+            print('The following images overlap sufficiently:')
+            print(temp_path)
+            print(sci_path)
+
         return True
 
     except PartialOverlapError:
@@ -74,30 +79,90 @@ def check_overlap(ra,dec,temp_path,sci_path,overlap_size=500,verbose=False):
             print(f'{temp_path} does not sufficiently overlap with the SN. ')
         return False
 
-def sfft(ra,dec,band,sci_tab,temp_tab):
+def sfft(ra,dec,band,sci_tab,temp_tab,verbose=False):
+    """
+    Run SFFT steps. This includes:
+    1. Aligning template image to science image
+    2. Preprocessing the science image
+    3. Cross-convolution
+    4. Differencing
+    5. Generating decorrelation kernel
+    6. Applying decorrelation kernel to difference image and cross-convolved science image
+
+    """
+    if verbose:
+        print('The science images are:')
+        sci_tab.pprint_all()
 
     for row in sci_tab:
+        print('*************************************************************')
         pointing, sca = row['pointing'], row['sca']
+        print(band,pointing,sca)
         sci_skysub_path = sky_subtract(band=band,pointing=pointing,sca=sca)
         sci_psf_path = get_imsim_psf(ra,dec,band,pointing,sca)
+        if verbose:
+            print('\n')
+            print('Path to science PSF:')
+            print(sci_psf_path)
+            print('\n')
 
         for t_row in temp_tab:    
             t_pointing, t_sca = t_row['pointing'], t_row['sca']
             t_imsim_psf = get_imsim_psf(ra,dec,band,t_pointing,t_sca)
-            t_psf_path = rotate_psf(ra,dec,t_imsim_psf,sci_skysub_path)
+            t_psf_path = rotate_psf(ra,dec,t_imsim_psf,sci_skysub_path,force=True)
+            if verbose:
+                print('\n')
+                print('Path to template PSF:')
+                print(t_psf_path)
+                print('\n')
             t_filepath = _build_filepath(None,band,t_pointing,t_sca,'image')
-            
             t_skysub = sky_subtract(path=t_filepath)
             t_align = imalign(template_path=sci_skysub_path,sci_path=t_skysub) # NOTE: This is correct, not flipped.
 
-            diff_savename = f'diff_{band}_{pointing}_{sca}_-_{t_pointing}_{t_sca}.fits'
-            dcker_savename = f'dcker_{band}_{pointing}_{sca}_-_{t_pointing}_{t_sca}.fits'
-            zpt_savename = f'zptimg_{band}_{pointing}_{sca}_-_{t_pointing}_{t_sca}.fits'
-            sci_conv, temp_conv = crossconvolve(sci_skysub_path,sci_psf_path,t_align,t_imsim_psf)
-            diff, soln = difference(sci_conv,temp_conv,sci_psf_path,t_psf_path,savename=diff_savename,backend='Numpy',force=True)
-            dcker_path = decorr_kernel(sci_skysub_path,t_skysub,sci_psf_path,t_psf_path,diff,soln,savename=dcker_savename)
-            decorr_imgpath = decorr_img(diff,dcker_path)
-            zpt_imgpath = decorr_img(sci_conv,dcker_path,savename=zpt_savename)
+            overlap = check_overlap(ra,dec,t_align,sci_skysub_path,verbose=verbose)
+            if overlap:
+                diff_savename = f'{band}_{pointing}_{sca}_-_{t_pointing}_{t_sca}.fits' # 'diff_' gets appended to the beginning of this
+                dcker_savename = f'dcker_{band}_{pointing}_{sca}_-_{t_pointing}_{t_sca}.fits'
+                zpt_savename = f'zptimg_{band}_{pointing}_{sca}_-_{t_pointing}_{t_sca}.fits'
+                sci_conv, temp_conv = crossconvolve(sci_skysub_path,sci_psf_path,t_align,t_imsim_psf)
+                if verbose:
+                    print('\n')
+                    print('Path to cross-convolved science image:')
+                    print(sci_conv)
+                    print('Path to cross-convolved template image:')
+                    print(temp_conv)
+                    print('\n')
+
+                diff, soln = difference(sci_conv,temp_conv,sci_psf_path,t_psf_path,savename=diff_savename,backend='Numpy',force=True)
+                if verbose:
+                    print('\n')
+                    print('Path to differenced image:')
+                    print(diff)
+                    print('\n')
+                
+                dcker_path = decorr_kernel(sci_skysub_path,t_skysub,sci_psf_path,t_psf_path,diff,soln,savename=dcker_savename)
+                if verbose:
+                    print('\n')
+                    print('Path to decorrelation kernel:')
+                    print(dcker_path)
+                    print('\n')
+                
+                decorr_imgpath = decorr_img(diff,dcker_path)
+                if verbose:
+                    print('\n')
+                    print('Path to final decorrelated differenced image:')
+                    print(decorr_imgpath)
+                    print('\n')
+
+                zpt_imgpath = decorr_img(sci_conv,dcker_path,savename=zpt_savename)
+                if verbose:
+                    print('\n')
+                    print('Path to zeropoint image:')
+                    print(zpt_imgpath)
+                    print('\n')
+
+            elif not overlap:
+                continue
 
 
 def run(oid,band,n_templates=1,verbose=False):
@@ -106,8 +171,11 @@ def run(oid,band,n_templates=1,verbose=False):
     in_tab, out_tab = sn_in_or_out(oid,start,end,band)
 
     template_tab = out_tab[:n_templates]
+    if verbose:
+        print('The template images are:')
+        print(template_tab)
 
-    sfft(ra,dec,band,in_tab,template_tab)
+    sfft(ra,dec,band,in_tab,template_tab,verbose=True)
 
 def parse_slurm():
     """
