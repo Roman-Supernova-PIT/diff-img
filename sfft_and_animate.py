@@ -177,6 +177,7 @@ def animate(frames,labels,oid,band,savename,artist='Lauren Aldoroty',savedir='/h
     """
     Animate a series of frames. 
     """
+    # NOTE: I still need to align the images to the same WCS for the animations. 
     if not os.path.exists(savedir):
         os.mkdir(savedir)
     
