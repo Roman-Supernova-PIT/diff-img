@@ -55,7 +55,7 @@ def sn_in_or_out(oid,start,end,band,infodir='/hpc/group/cosmology/lna18/'):
 
     return in_tab, out_tab
 
-def check_overlap(ra,dec,temp_path,sci_path,data_ext=0,overlap_size=500,verbose=False):
+def check_overlap(ra,dec,temp_path,sci_path,data_ext=0,overlap_size=1000,verbose=False):
     """
     Check that the science and template images sufficiently overlap, centered on
     the specified RA/Dec (SN location).
@@ -117,9 +117,6 @@ def sfft(ra,dec,band,sci_pointing,sci_sca,
 
     overlap = check_overlap(ra,dec,t_align,sci_skysub_path,verbose=verbose)
     if overlap:
-        diff_savename = f'{band}_{sci_pointing}_{sci_sca}_-_{t_pointing}_{t_sca}.fits' # 'diff_' gets appended to the beginning of this
-        dcker_savename = f'dcker_{band}_{sci_pointing}_{sci_sca}_-_{t_pointing}_{t_sca}.fits'
-        zpt_savename = f'zptimg_{band}_{sci_pointing}_{sci_sca}_-_{t_pointing}_{t_sca}.fits'
         sci_conv, temp_conv = crossconvolve(sci_skysub_path,sci_psf_path,t_align,t_imsim_psf,force=True)
         if verbose:
             print('\n')
@@ -129,6 +126,7 @@ def sfft(ra,dec,band,sci_pointing,sci_sca,
             print(temp_conv)
             print('\n')
 
+        diff_savename = f'{band}_{sci_pointing}_{sci_sca}_-_{t_pointing}_{t_sca}.fits' # 'diff_' gets appended to the beginning of this
         diff, soln = difference(sci_conv,temp_conv,sci_psf_path,t_psf_path,savename=diff_savename,backend='Numpy',force=True)
         if verbose:
             print('\n')
@@ -136,6 +134,7 @@ def sfft(ra,dec,band,sci_pointing,sci_sca,
             print(diff)
             print('\n')
         
+        dcker_savename = f'dcker_{band}_{sci_pointing}_{sci_sca}_-_{t_pointing}_{t_sca}.fits'
         dcker_path = decorr_kernel(sci_skysub_path,t_skysub,sci_psf_path,t_psf_path,diff,soln,savename=dcker_savename)
         if verbose:
             print('\n')
@@ -150,6 +149,7 @@ def sfft(ra,dec,band,sci_pointing,sci_sca,
             print(decorr_imgpath)
             print('\n')
 
+        zpt_savename = f'zptimg_{band}_{sci_pointing}_{sci_sca}_-_{t_pointing}_{t_sca}.fits'
         zpt_imgpath = decorr_img(sci_conv,dcker_path,savename=zpt_savename)
         if verbose:
             print('\n')
@@ -157,11 +157,21 @@ def sfft(ra,dec,band,sci_pointing,sci_sca,
             print(zpt_imgpath)
             print('\n')
 
+        decorr_psf_savename = f'psf_{band}_{sci_pointing}_{sci_sca}_-_{t_pointing}_{t_sca}.fits'
+        decorr_psfpath = decorr_img(sci_psf_path,dcker_path,savename=decorr_psf_savename)
+        if verbose:
+            print('\n')
+            print('Path to decorrelated PSF (use for photometry):')
+            print(decorr_psfpath)
+            print('\n')
+
         return sci_skysub_path, decorr_imgpath
 
     elif not overlap:
         if verbose:
             print(f'Images {band} {sci_pointing} {sci_sca} and {band} {t_pointing} {t_sca} do not sufficiently overlap to do image subtraction.')
+
+        return None, None
 
 def animate(frames,labels,oid,band,savename,artist='Lauren Aldoroty',savedir='/hpc/group/cosmology/lna18/roman_sim_imgs/Roman_Rubin_Sims_2024/gifs/'):
     """
@@ -178,7 +188,7 @@ def animate(frames,labels,oid,band,savename,artist='Lauren Aldoroty',savedir='/h
 def run(oid,band,n_templates=1,verbose=False):
 
     ra,dec,start,end = set_sn(oid)
-    in_tab, out_tab = sn_in_or_out(oid,start,end,band)
+    in_tab,out_tab = sn_in_or_out(oid,start,end,band)
 
     template_tab = out_tab[:n_templates]
     if verbose:
@@ -197,27 +207,27 @@ def run(oid,band,n_templates=1,verbose=False):
             print(band,sci_pointing,sci_sca,'-',band,t_pointing,t_sca)
 
             skysubimgpath, ddimgpath = sfft(ra,dec,band,sci_pointing,sci_sca,t_pointing,t_sca,verbose=verbose)
+            if skysubimgpath is not None:
+                # Make stamps.
+                dd_stamp_savepath = f'/work/lna18/imsub_out/decorr/stamps/dd_stamp_{oid}_{band}_{sci_pointing}_{sci_sca}_-_{t_pointing}_{t_sca}.fits'
+                skysub_stamp_savepath = f'/work/lna18/imsub_out/skysub/stamps/skysub_stamp_{oid}_{band}_{sci_pointing}_{sci_sca}_-_{t_pointing}_{t_sca}.fits'
 
-            # Make stamps.
-            dd_stamp_savepath = f'/work/lna18/imsub_out/decorr/stamps/dd_stamp_{oid}_{band}_{sci_pointing}_{sci_sca}_-_{t_pointing}_{t_sca}.fits'
-            skysub_stamp_savepath = f'/work/lna18/imsub_out/skysub/stamps/skysub_stamp_{oid}_{band}_{sci_pointing}_{sci_sca}_-_{t_pointing}_{t_sca}.fits'
+                ddstamppath = stampmaker(ra,dec,ddimgpath,savepath=dd_stamp_savepath,shape=np.array([100,100]))
+                skysubstamppath = stampmaker(ra,dec,ddimgpath,savepath=skysub_stamp_savepath,shape=np.array([100,100]))
+            
+                # Prepare information for animations.
+                pointings.append(sci_pointing)
+                with fits.open(ddstamppath) as ddhdu:
+                    ddimg = ddhdu[0].data
+                    dd_stamps.append(ddimg)
 
-            ddstamppath = stampmaker(ra,dec,ddimgpath,savepath=dd_stamp_savepath,shape=np.array([100,100]))
-            skysubstamppath = stampmaker(ra,dec,ddimgpath,savepath=skysub_stamp_savepath,shape=np.array([100,100]))
-        
-            # Prepare information for animations.
-            pointings.append(sci_pointing)
-            with fits.open(ddstamppath) as ddhdu:
-                ddimg = ddhdu[0].data
-                dd_stamps.append(ddimg)
+                with fits.open(skysubstamppath) as skysubhdu:
+                    skysubimg = skysubhdu[0].data
+                    skysub_stamps.append(skysubimg)
 
-            with fits.open(skysubstamppath) as skysubhdu:
-                skysubimg = skysubhdu[0].data
-                skysub_stamps.append(skysubimg)
-
-        # Make animations.
-        # They are saved with the SN ID, followed by the image used as a template.
-        animate(dd_stamps,pointings,oid,band,f'{oid}/{oid}_{band}_{t_pointing}_{t_sca}_SFFT.gif')
+            # Make animations.
+            # They are saved with the SN ID, followed by the image used as a template.
+            animate(dd_stamps,pointings,oid,band,f'{oid}/{oid}_{band}_{t_pointing}_{t_sca}_SFFT.gif')
 
     # I don't need N_templates animations for the sky subtracted-only images, so this is out of the loop.
     animate(skysub_stamps,pointings,oid,band,f'{oid}/{oid}_{band}_RAW.gif')
