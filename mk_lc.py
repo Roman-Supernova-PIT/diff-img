@@ -18,11 +18,42 @@ import astropy.units as u
 from galsim import roman
 
 # IMPORTS Internal:
-from phrosty.utils import read_truth_txt, get_mjd, get_transient_radec, get_transient_mjd, get_mjd_info
+from phrosty.utils import read_truth_txt, get_mjd, get_transient_radec, get_transient_mjd, get_mjd_info, get_exptime
 from phrosty.photometry import ap_phot, psfmodel, psf_phot, crossmatch
 
 ###########################################################################
 
+def set_sn(oid):
+    """
+    Retrieve RA, Dec, MJD start, MJD end for specified object ID.  
+    """
+    RA, DEC = get_transient_radec(oid)
+    start, end = get_transient_mjd(oid)
+
+    return RA, DEC, start, end
+
+def sn_in_or_out(oid,start,end,band,infodir='/hpc/group/cosmology/lna18/'):
+    """
+    Retrieve pointings that contain and do not contain the specified SN,
+    per the truth files by MJD. 
+    """
+    transient_info_file = os.path.join(
+        infodir, f'roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_instances_nomjd.csv'
+    )
+
+    tab = Table.read(transient_info_file)
+    tab.sort('pointing')
+    tab = tab[tab['filter'] == band]
+
+    in_tab_all = get_mjd_info(start,end)
+    in_rows = np.where(np.isin(tab['pointing'],in_tab_all['pointing']))[0]
+    in_tab = tab[in_rows]
+
+    out_tab_all = get_mjd_info(start,end,return_inverse=True)
+    out_rows = np.where(np.isin(tab['pointing'],out_tab_all['pointing']))[0]
+    out_tab = tab[out_rows]
+
+    return in_tab, out_tab
 
 def get_star_truth_coordinates_in_aligned_images(
     oid, band, pointing, sca, ref_wcs, exptime, area_eff, zpt, nx=4088, ny=4088
@@ -75,7 +106,7 @@ def plot_star_truth_vs_fit_mag(
     plt.close()
 
 
-def plot_lc_with_all_bands(oid):
+def plot_lc_with_all_bands(oid,start,end):
     """
     Plot a LC with all bands for a SN.
     """
@@ -196,8 +227,12 @@ def calc_sn_photometry(img, wcs, psf, coord):
 
 
 def make_lc(
-    oid, band, exptime, coord, area_eff, infodir="/hpc/group/cosmology/lna18", inputdir=".", outputdir="."
+    oid, band, exptime, coord, area_eff, in_tab, t_pointing, t_sca, infodir="/hpc/group/cosmology/lna18", inputdir=".", outputdir="."
 ):
+    """
+    Make one light curve for one series of single-epoch subtractions (i.e., one SN using DIA all with the same template).
+    """
+
     if not os.path.exists(outputdir):
         os.path.mkdir(outputdir)
 
@@ -226,16 +261,7 @@ def make_lc(
     tab = tab[tab["filter"] == band]
     tab.sort("pointing")
 
-    # First, limit to images that contain the SN.
-    start, end = get_transient_mjd(oid)
-    in_tab = get_mjd_info(start, end, return_inverse=False)
-    in_rows = np.where(np.isin(tab["pointing"], in_tab["pointing"]))[0]
-    in_tab = tab[in_rows]
-
     gs_zpt = roman.getBandpasses()[band].zeropoint
-
-    ref_pointing = in_tab[0]["pointing"]
-    ref_sca = in_tab[0]["sca"]
 
     tab = tab[1:]  # Because the first one is the reference image.
     gs_zpt = roman.getBandpasses()[band].zeropoint
@@ -244,25 +270,21 @@ def make_lc(
         pointing, sca = row["pointing"], row["sca"]
         print(band, get_mjd(pointing), pointing, sca)
 
-        # Get reference image.
-        ref_path = os.path.join(
-            inputdir, f"imsub_out/coadd/cutouts_4k/{oid}_{band}_{ref_pointing}_{ref_sca}_coadd_4kcutout.fits"
-        )
-        with fits.open(ref_path) as ref_hdu:
-            ref_wcs = WCS(ref_hdu[0].header)
-
-        # Decorrelated:
+        # Open necesary images.
+        # Zeropoint image:
         zp_imgdir = os.path.join(
             inputdir,
-            f"imsub_out/science/decorr_conv_align_skysub_Roman_TDS_simple_model_{band}_{pointing}_{sca}.fits",
+            f"imsub_out/decorr/decorr_zptimg_{band}_{pointing}_{sca}_-_{t_pointing}_{t_sca}.fits",
         )
+        # SN difference image:
         sndir = os.path.join(
             inputdir,
-            f"imsub_out/subtract/decorr/decorr_diff_conv_align_skysub_Roman_TDS_simple_model_{band}_{pointing}_{sca}.fits",
+            f"imsub_out/decorr/decorr_diff_{band}_{pointing}_{sca}_-_{t_pointing}_{t_sca}.fits",
         )
+        # PSF: 
         psf_imgdir = os.path.join(
             inputdir,
-            f"imsub_out/psf_final/conv_align_skysub_Roman_TDS_simple_model_{band}_{pointing}_{sca}.sfft_DCSCI.DeCorrelated.dcPSFFStack.fits",
+            f"imsub_out/decorr/decorr_psf_{band}_{pointing}_{sca}_-_{t_pointing}_{t_sca}.fits",
         )
 
         # Sky-subtracted field for generating the ZP.
@@ -280,18 +302,18 @@ def make_lc(
         psf_img = psf_hdu[0].data
 
         stars = get_star_truth_coordinates_in_aligned_images(
-            oid, band, pointing, sca, ref_wcs, exptime, area_eff, gs_zpt, nx=4088, ny=4088
+            oid, band, pointing, sca, zp_wcs, exptime, area_eff, gs_zpt, nx=4088, ny=4088
         )
 
         # Have to clean out the rows where the value is centered on a NaN.
         # MWV: 2024-07-12  Why?  I mean, why do this based on central pixel
         # instead of waiting till you get the photometry results and on that.
-        cutouts = [
-            Cutout2D(zp_img, (x, y), wcs=zp_wcs, size=50, mode="partial").data
-            for (x, y) in zip(stars["x"], stars["y"])
-        ]
-        nanrows = np.array([~np.any(np.isnan(cut)) for cut in cutouts])
-        stars = stars[nanrows]
+        # cutouts = [
+        #     Cutout2D(zp_img, (x, y), wcs=zp_wcs, size=50, mode="partial").data
+        #     for (x, y) in zip(stars["x"], stars["y"])
+        # ]
+        # nanrows = np.array([~np.any(np.isnan(cut)) for cut in cutouts])
+        # stars = stars[nanrows]
 
         # Do PSF photometry to get the zero point.
         # Build PSF.
@@ -387,7 +409,7 @@ def make_lc(
         ],
     )
     savepath = os.path.join(
-        outputdir, f"roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_{band}_lc_coadd.csv"
+        outputdir, f"roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_{band}_{t_pointing}_{t_sca}_lc.csv"
     )
     os.makedirs(os.path.dirname(savepath), exist_ok=True)
     results.write(savepath, format="csv", overwrite=True)
@@ -447,36 +469,22 @@ def make_lc_plot(oid, band, start, end, lc_filename, plot_filename):
     plt.close()
 
 
-def run(oid, band, inputdir=".", outputdir="."):
-    ra, dec = get_transient_radec(oid)
-    start, end = get_transient_mjd(oid)
+def run(oid, band, n_templates=1, inputdir=".", outputdir="."):
 
-    # oid = 20202893
-    # ra = 8.037774
-    # dec = -42.752337
-
-    # oid = 20172782
-    # ra = 7.551093401915147
-    # dec = -44.80718106491529
-
+    ra,dec,start,end = set_sn(oid)
     coord = SkyCoord(ra=ra * u.deg, dec=dec * u.deg)
+    in_tab,out_tab = sn_in_or_out(oid,start,end,band)
+    template_tab = out_tab[:n_templates]
 
-    exptime = {
-        "F184": 901.175,
-        "J129": 302.275,
-        "H158": 302.275,
-        "K213": 901.175,
-        "R062": 161.025,
-        "Y106": 302.275,
-        "Z087": 101.7,
-    }
-
+    exptime = get_exptime(band)
     area_eff = roman.collecting_area
 
-    lc_filename = make_lc(oid, band, exptime[band], coord, area_eff, inputdir=inputdir, outputdir=outputdir)
-    plot_filename = os.path.join(outputdir, f"figs/{oid}_{band}.png")
-    os.makedirs(os.path.dirname(plot_filename), exist_ok=True)
-    make_lc_plot(oid, band, start, end, lc_filename, plot_filename)
+    for row in template_tab:
+        t_pointing, t_sca = row['pointing'], row['sca']
+        lc_filename = make_lc(oid, band, exptime, coord, area_eff, in_tab, t_pointing,t_sca, inputdir=inputdir, outputdir=outputdir)
+        plot_filename = os.path.join(outputdir, f"figs/{oid}_{band}_{t_pointing}_{t_sca}.png")
+        os.makedirs(os.path.dirname(plot_filename), exist_ok=True)
+        make_lc_plot(oid, band, start, end, lc_filename, plot_filename)
 
 
 def parse_slurm():
@@ -506,6 +514,14 @@ def parse_and_run():
         choices=[None, "F184", "H158", "J129", "K213", "R062", "Y106", "Z087"],
         help="Filter to use.  None to use all available.  Overriding by --slurm_array.",
     )
+
+    parser.add_argument(
+        'n_templates',
+        type=int,
+        default=1,
+        help='Number of template images to use.'
+    )
+
     parser.add_argument(
         "--inputdir",
         type=str,
