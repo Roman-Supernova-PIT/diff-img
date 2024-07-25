@@ -3,7 +3,7 @@
 #SBATCH --job-name=sfft
 #SBATCH --mem=264G
 #SBATCH --partition=cosmology
-#SBATCH -w dcc-cosmology-08
+#SBATCH -w dcc-cosmology-07
 #SBATCH --output=/hpc/group/cosmology/lna18/rsim_photometry/dcc_output/sfft/sfft-%J.out
 #SBATCH --mail-user=lauren.aldoroty@duke.edu
 #SBATCH --mail-type=ALL
