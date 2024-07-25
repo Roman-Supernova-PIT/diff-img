@@ -276,97 +276,117 @@ def make_lc(
             inputdir,
             f"imsub_out/decorr/decorr_zptimg_{band}_{pointing}_{sca}_-_{t_pointing}_{t_sca}.fits",
         )
+
         # SN difference image:
         sndir = os.path.join(
             inputdir,
             f"imsub_out/decorr/decorr_diff_{band}_{pointing}_{sca}_-_{t_pointing}_{t_sca}.fits",
         )
+
+
+
         # PSF: 
         psf_imgdir = os.path.join(
             inputdir,
             f"imsub_out/decorr/decorr_psf_{band}_{pointing}_{sca}_-_{t_pointing}_{t_sca}.fits",
         )
 
-        # Sky-subtracted field for generating the ZP.
-        zp_hdu = fits.open(zp_imgdir)
-        zp_img = zp_hdu[0].data
-        zp_wcs = WCS(zp_hdu[0].header)
+        input_paths = [zp_imgdir,sndir,psf_imgdir]
+        paths_exist = [os.path.exists(path) for path in input_paths]
+        if all(paths_exist):
 
-        # Subtracted stamp (SN only)
-        sub_hdu = fits.open(sndir)
-        sub_img = sub_hdu[0].data
-        sub_wcs = WCS(sub_hdu[0].header)
+            # Sky-subtracted field for generating the ZP.
+            zp_hdu = fits.open(zp_imgdir)
+            zp_img = zp_hdu[0].data
+            zp_wcs = WCS(zp_hdu[0].header)
 
-        # PSF
-        psf_hdu = fits.open(psf_imgdir)
-        psf_img = psf_hdu[0].data
+            # Subtracted stamp (SN only)
+            sub_hdu = fits.open(sndir)
+            sub_img = sub_hdu[0].data
+            sub_wcs = WCS(sub_hdu[0].header)
 
-        stars = get_star_truth_coordinates_in_aligned_images(
-            oid, band, pointing, sca, zp_wcs, exptime, area_eff, gs_zpt, nx=4088, ny=4088
-        )
+            # PSF
+            psf_hdu = fits.open(psf_imgdir)
+            psf_img = psf_hdu[0].data
 
-        # Have to clean out the rows where the value is centered on a NaN.
-        # MWV: 2024-07-12  Why?  I mean, why do this based on central pixel
-        # instead of waiting till you get the photometry results and on that.
-        # cutouts = [
-        #     Cutout2D(zp_img, (x, y), wcs=zp_wcs, size=50, mode="partial").data
-        #     for (x, y) in zip(stars["x"], stars["y"])
-        # ]
-        # nanrows = np.array([~np.any(np.isnan(cut)) for cut in cutouts])
-        # stars = stars[nanrows]
+            stars = get_star_truth_coordinates_in_aligned_images(
+                oid, band, pointing, sca, zp_wcs, exptime, area_eff, gs_zpt, nx=4088, ny=4088
+            )
 
-        # Do PSF photometry to get the zero point.
-        # Build PSF.
-        psf = psfmodel(psf_img)
-        init_params = ap_phot(zp_img, stars)
-        res = psf_phot(zp_img, psf, init_params, wcs=zp_wcs)
-        # MWV: 2024-07-12:  What is this printing?
-        # The instrumental flux for the SN?
-        print("SN results from star photometry:", res[-1]["flux_fit"])
+            # Have to clean out the rows where the value is centered on a NaN.
+            # MWV: 2024-07-12  Why?  I mean, why do this based on central pixel
+            # instead of waiting till you get the photometry results and on that.
+            cutouts = [
+                Cutout2D(zp_img, (x, y), wcs=zp_wcs, size=50, mode="partial").data
+                for (x, y) in zip(stars["x"], stars["y"])
+            ]
+            nanrows = np.array([~np.any(np.isnan(cut)) for cut in cutouts])
+            stars = stars[nanrows]
 
-        # Crossmatch.
-        xm = crossmatch(res, stars)
+            # Do PSF photometry to get the zero point.
+            # Build PSF.
+            psf = psfmodel(psf_img)
+            init_params = ap_phot(zp_img, stars)
+            res = psf_phot(zp_img, psf, init_params, wcs=zp_wcs)
+            # MWV: 2024-07-12:  What is this printing?
+            # The instrumental flux for the SN?
+            print("SN results from star photometry:", res[-1]["flux_fit"])
 
-        # Get the zero point.
-        star_fit_mags = -2.5 * np.log10(xm["flux_fit"])
-        star_truth_mags = -2.5 * np.log10(xm["flux_truth"].data) + 2.5 * np.log10(exptime * area_eff) + gs_zpt
-        zpt_mask = np.logical_and(star_truth_mags > 20, star_truth_mags < 23)
-        zpt = np.nanmedian(star_truth_mags[zpt_mask] - star_fit_mags[zpt_mask])
+            # Crossmatch.
+            xm = crossmatch(res, stars)
 
-        plot_filename = os.path.join(
-            outputdir,
-            f"roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/zpt_plots/zpt_{band}_{pointing}_{sca}.png",
-        )
-        # Make sure directory of plot_filename file exists.
-        os.makedirs(os.path.dirname(plot_filename), exist_ok=True)
-        plot_star_truth_vs_fit_mag(
-            star_truth_mags, star_fit_mags, zpt, band, pointing, sca, plot_filename=plot_filename
-        )
+            # Get the zero point.
+            star_fit_mags = -2.5 * np.log10(xm["flux_fit"])
+            star_truth_mags = -2.5 * np.log10(xm["flux_truth"].data) + 2.5 * np.log10(exptime * area_eff) + gs_zpt
+            zpt_mask = np.logical_and(star_truth_mags > 20, star_truth_mags < 23)
+            zpt = np.nanmedian(star_truth_mags[zpt_mask] - star_fit_mags[zpt_mask])
 
-        try:
-            sn_phot = calc_sn_photometry(sub_img, sub_wcs, psf, coord)
-        # MWV: 2024-07-12: Why is this the error we expect?
-        except TypeError:
-            print(f"fit_shape overlaps with edge for {band} {pointing} {sca}.")
+            plot_filename = os.path.join(
+                outputdir,
+                f"roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/zpt_plots/zpt_{band}_{pointing}_{sca}.png",
+            )
+            # Make sure directory of plot_filename file exists.
+            os.makedirs(os.path.dirname(plot_filename), exist_ok=True)
+            plot_star_truth_vs_fit_mag(
+                star_truth_mags, star_fit_mags, zpt, band, pointing, sca, plot_filename=plot_filename
+            )
+
+            try:
+                print('SUBTRACTED IMAGE, WCS, PSF, COORD')
+                print(sub_img)
+                print(sub_wcs)
+                print(coord)
+                sn_phot = calc_sn_photometry(sub_img, sub_wcs, psf, coord)
+            # MWV: 2024-07-12: Why is this the error we expect?
+            except TypeError as te:
+                print(te)
+                print(f"fit_shape overlaps with edge for {band} {pointing} {sca}.")
+                continue
+            except ValueError as ve:
+                print(ve)
+                print(f'There are probably NaNs where an object should be in {band} {pointing} {sca}.')
+                continue
+
+
+            filters.append(band)
+            pointings.append(pointing)
+            scas.append(sca)
+            mjds.append(get_mjd(pointing))
+            mags.append(sn_phot["mag"][0])
+            magerr.append(sn_phot["mag_err"][0])
+            fluxes.append(sn_phot["flux_fit"][0])
+            fluxerrs.append(sn_phot["flux_err"][0])
+            zpts.append(zpt)
+            ra_init.append(sn_phot["ra_init"][0])
+            dec_init.append(sn_phot["dec_init"][0])
+            x_init.append(sn_phot["x_init"][0])
+            y_init.append(sn_phot["y_init"][0])
+            ra_fit.append(sn_phot["ra"][0])
+            dec_fit.append(sn_phot["dec"][0])
+            x_fit.append(sn_phot["x_fit"][0])
+            y_fit.append(sn_phot["y_fit"][0])
+        else:
             continue
-
-        filters.append(band)
-        pointings.append(pointing)
-        scas.append(sca)
-        mjds.append(get_mjd(pointing))
-        mags.append(sn_phot["mag"][0])
-        magerr.append(sn_phot["mag_err"][0])
-        fluxes.append(sn_phot["flux_fit"][0])
-        fluxerrs.append(sn_phot["flux_err"][0])
-        zpts.append(zpt)
-        ra_init.append(sn_phot["ra_init"][0])
-        dec_init.append(sn_phot["dec_init"][0])
-        x_init.append(sn_phot["x_init"][0])
-        y_init.append(sn_phot["y_init"][0])
-        ra_fit.append(sn_phot["ra"][0])
-        dec_fit.append(sn_phot["dec"][0])
-        x_fit.append(sn_phot["x_fit"][0])
-        y_fit.append(sn_phot["y_fit"][0])
 
     results = Table(
         [
@@ -502,7 +522,7 @@ def parse_slurm():
 
 def parse_and_run():
     parser = argparse.ArgumentParser(
-        prog="mk_lc", description="Runs subtractions against a reference template for given SN"
+        prog="mk_lc", description="Photometry for a given SN"
     )
     parser.add_argument(
         "oid", type=int, help="ID of transient.  Used to look up hard-coded information on transient."
