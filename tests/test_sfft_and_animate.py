@@ -3,6 +3,7 @@ import os
 import sys
 
 # IMPORTS Astro:
+from astropy.io import fits
 from astropy.table import join
 
 cwd = os.path.dirname(os.path.realpath(__file__))
@@ -34,6 +35,15 @@ def test_sn_in_or_out():
 
     assert len(joined) == 0 
 
-# def test_check_overlap():
-# Get two images that do not overlap at all check that False is returned
-# Check the same image against itself and check that True is returned 
+def test_check_overlap():
+    path1 = 'testdata/Roman_TDS_simple_model_R062_6_17.fits.gz'
+    path2 = 'testdata/Roman_TDS_simple_model_R062_6_18.fits.gz'
+
+    with fits.open(path1) as hdu:
+        ra, dec = hdu[0].header['CRVAL1'], hdu[0].header['CRVAL2']
+
+    check1 = check_overlap(ra,dec,path1,path1,overlap_size=4088,data_ext=1)
+    check2 = check_overlap(ra,dec,path1,path2,overlap_size=4088,data_ext=1)
+
+    assert check1
+    assert not check2
