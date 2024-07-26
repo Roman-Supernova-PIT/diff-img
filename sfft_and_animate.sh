@@ -3,6 +3,7 @@
 #SBATCH --job-name=sfft
 #SBATCH --mem=264G
 #SBATCH --partition=cosmology
+#SBATCH -w dcc-cosmology-07
 #SBATCH --output=/hpc/group/cosmology/lna18/rsim_photometry/dcc_output/sfft/sfft-%J.out
 #SBATCH --mail-user=lauren.aldoroty@duke.edu
 #SBATCH --mail-type=ALL
@@ -19,7 +20,7 @@ conda activate repeatability
 
 # Run program. 
 # As job array:
-python -u sfft_and_animate.py 20172782
+python -u sfft_and_animate.py 20172782 1 --verbose True --slurm_array
 
 # Loop through bands:
 # bands=( R062 Z087 Y106 J129 H158 F184 K213 )

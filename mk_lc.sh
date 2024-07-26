@@ -12,4 +12,4 @@
 source ~/.bashrc
 conda activate repeatability
 
-python -u mk_lc.py 20172782
+python -u mk_lc.py 20172782 1 --inputdir /work/lna18/ --outputdir /hpc/group/cosmology/lna18/roman_sim_imgs/ --slurm_array
