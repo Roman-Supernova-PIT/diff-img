@@ -96,7 +96,7 @@ def check_overlap(ra,dec,imgpath,data_ext=0,overlap_size=1000,verbose=False,show
         if verbose:
             print(f'{imgpath} does not sufficiently overlap with the SN. ')
         return False
-        
+
 def sfft(ra,dec,band,sci_pointing,sci_sca,
                      t_pointing,t_sca,verbose=False):
     """
@@ -115,15 +115,10 @@ def sfft(ra,dec,band,sci_pointing,sci_sca,
     t_skysub = sky_subtract(path=t_filepath)
     t_align = imalign(template_path=sci_skysub_path,sci_path=t_skysub) # NOTE: This is correct, not flipped.
 
-    coord = SkyCoord(ra*u.deg,dec*u.deg)
-    sci_wcs = WCS(get_fitsobj(band=band,pointing=sci_pointing,sca=sci_sca)[0].header)
-    xysci = skycoord_to_pixel(coord,sci_wcs)
+    template_overlap = check_overlap(ra,dec,t_align,verbose=verbose)
+    science_overlap = check_overlap(ra,dec,sci_skysub_path,verbose=verbose)
 
-    template_overlap = check_overlap(xysci[0],xysci[1],t_align,verbose=verbose)
-    science_overlap = check_overlap(xysci[0],xysci[1],sci_skysub_path,verbose=verbose)
-
-    overlap = template_overlap_& science_overlap
-    if not overlap:
+    if not template_overlap or not science_overlap:
         if verbose:
             print(f'Images {band} {sci_pointing} {sci_sca} and {band} {t_pointing} {t_sca} do not sufficiently overlap to do image subtraction.')
 
