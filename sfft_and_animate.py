@@ -13,13 +13,14 @@ from astropy.visualization import ZScaleInterval
 from astropy.io import fits
 from astropy.nddata import Cutout2D
 from astropy.wcs import WCS
+from astropy.wcs.utils import skycoord_to_pixel
 from astropy.nddata.utils import PartialOverlapError, NoOverlapError
 import astropy.units as u
 
 # IMPORTS Internal:
 from phrosty.imagesubtraction import sky_subtract, imalign, get_imsim_psf, rotate_psf, crossconvolve, difference, decorr_kernel, decorr_img, stampmaker
 from phrosty.plotting import animate_stamps
-from phrosty.utils import get_transient_radec, get_transient_mjd, get_mjd_info, _build_filepath
+from phrosty.utils import get_transient_radec, get_transient_mjd, get_mjd_info, _build_filepath, get_fitsobj
 
 ###########################################################################
 
@@ -57,32 +58,39 @@ def sn_in_or_out(oid,start,end,band,infodir='/hpc/group/cosmology/lna18/'):
 
     return in_tab, out_tab
 
-def check_overlap(ra,dec,temp_path,sci_path,data_ext=0,overlap_size=1000,verbose=False):
+def check_overlap(x,y,imgpath,data_ext=0,overlap_size=1000,verbose=False,show_cutout=False):
     """
     Does the science and template images sufficiently overlap, centered on
-    the specified RA/Dec (SN location)?
+    the specified x, y pixel coordinates (SN location)?
     """
-    with fits.open(temp_path) as hdu:
-        temp_img = hdu[data_ext].data
-        ra = hdu[0].header['CRVAL1']
-        dec = hdu[0].header['CRVAL2']
-        
-    with fits.open(sci_path) as hdu:
-        sci_wcs = WCS(hdu[0].header)
+    
+    with fits.open(imgpath) as hdu:
+        img = hdu[data_ext].data
+
     try:
-        coord = SkyCoord(ra=ra*u.deg,dec=dec*u.deg)
-        ref_cutout = Cutout2D(temp_img,coord,overlap_size,wcs=sci_wcs,mode='partial')
+        cutout = Cutout2D(img,(x,y),overlap_size,mode='strict')
+        if show_cutout:
+            z1,z2 = ZScaleInterval(n_samples=1000,
+            contrast=0.25,
+            max_reject=0.5,
+            min_npixels=5,
+            krej=2.5,
+            max_iterations=5,
+            ).get_limits(cutout.data)
+
+            plt.figure()
+            plt.imshow(cutout.data, vmin=z1, vmax=z2, cmap='Greys')
+
+            plt.show()
 
         if verbose:
-            print('The following images overlap sufficiently:')
-            print(temp_path)
-            print(sci_path)
+            print(f'The image {imgpath} contains sufficient overlap around pixel coordinates {x}, {y}.')
 
         return True
 
     except (PartialOverlapError, NoOverlapError):
         if verbose:
-            print(f'{temp_path} does not sufficiently overlap with the SN. ')
+            print(f'{imgpath} does not sufficiently overlap with the SN. ')
         return False
 
 def sfft(ra,dec,band,sci_pointing,sci_sca,
@@ -103,7 +111,11 @@ def sfft(ra,dec,band,sci_pointing,sci_sca,
     t_skysub = sky_subtract(path=t_filepath)
     t_align = imalign(template_path=sci_skysub_path,sci_path=t_skysub) # NOTE: This is correct, not flipped.
 
-    overlap = check_overlap(ra,dec,t_align,sci_skysub_path,verbose=verbose)
+    coord = SkyCoord(ra*u.deg,dec*u.deg)
+    sci_wcs = WCS(get_fitsobj(band=band,pointing=sci_pointing,sca=sci_sca)[0].header)
+    xysci = skycoord_to_pixel(coord,sci_wcs)
+
+    overlap = check_overlap(xysci[0],xysci[1],t_align,sci_skysub_path,verbose=verbose)
 
     if not overlap:
         if verbose:
