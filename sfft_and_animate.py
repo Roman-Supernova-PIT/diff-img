@@ -12,7 +12,7 @@ from astropy.coordinates import SkyCoord
 from astropy.visualization import ZScaleInterval
 from astropy.io import fits
 from astropy.nddata import Cutout2D
-from astropy.wcs import WCS
+from astropy.wcs import WCS, NoConvergence
 from astropy.wcs.utils import skycoord_to_pixel
 from astropy.nddata.utils import PartialOverlapError, NoOverlapError
 import astropy.units as u
@@ -58,17 +58,21 @@ def sn_in_or_out(oid,start,end,band,infodir='/hpc/group/cosmology/lna18/'):
 
     return in_tab, out_tab
 
-def check_overlap(x,y,imgpath,data_ext=0,overlap_size=1000,verbose=False,show_cutout=False):
+def check_overlap(ra,dec,imgpath,data_ext=0,overlap_size=1000,verbose=False,show_cutout=False):
     """
     Does the science and template images sufficiently overlap, centered on
-    the specified x, y pixel coordinates (SN location)?
+    the specified RA, dec coordinates (SN location)?
     """
     
     with fits.open(imgpath) as hdu:
         img = hdu[data_ext].data
+        wcs = WCS(hdu[data_ext].header)
+        
+    coord = SkyCoord(ra=ra*u.deg,dec=dec*u.deg)
+    pxcoords = skycoord_to_pixel(coord,wcs)
 
     try:
-        cutout = Cutout2D(img,(x,y),overlap_size,mode='strict')
+        cutout = Cutout2D(img,pxcoords,overlap_size,mode='strict')
         if show_cutout:
             z1,z2 = ZScaleInterval(n_samples=1000,
             contrast=0.25,
@@ -84,7 +88,7 @@ def check_overlap(x,y,imgpath,data_ext=0,overlap_size=1000,verbose=False,show_cu
             plt.show()
 
         if verbose:
-            print(f'The image {imgpath} contains sufficient overlap around pixel coordinates {x}, {y}.')
+            print(f'The image {imgpath} contains sufficient overlap around coordinates {ra}, {dec}.')
 
         return True
 
@@ -92,7 +96,7 @@ def check_overlap(x,y,imgpath,data_ext=0,overlap_size=1000,verbose=False,show_cu
         if verbose:
             print(f'{imgpath} does not sufficiently overlap with the SN. ')
         return False
-
+        
 def sfft(ra,dec,band,sci_pointing,sci_sca,
                      t_pointing,t_sca,verbose=False):
     """
@@ -115,15 +119,17 @@ def sfft(ra,dec,band,sci_pointing,sci_sca,
     sci_wcs = WCS(get_fitsobj(band=band,pointing=sci_pointing,sca=sci_sca)[0].header)
     xysci = skycoord_to_pixel(coord,sci_wcs)
 
-    overlap = check_overlap(xysci[0],xysci[1],t_align,sci_skysub_path,verbose=verbose)
+    template_overlap = check_overlap(xysci[0],xysci[1],t_align,verbose=verbose)
+    science_overlap = check_overlap(xysci[0],xysci[1],sci_skysub_path,verbose=verbose)
 
+    overlap = template_overlap_& science_overlap
     if not overlap:
         if verbose:
             print(f'Images {band} {sci_pointing} {sci_sca} and {band} {t_pointing} {t_sca} do not sufficiently overlap to do image subtraction.')
 
         return None, None
 
-    elif overlap:
+    else:
         sci_psf_path = get_imsim_psf(ra,dec,band,sci_pointing,sci_sca)
         if verbose:
             print('\n')

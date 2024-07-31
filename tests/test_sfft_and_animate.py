@@ -6,6 +6,7 @@ import numpy as np
 # IMPORTS Astro:
 from astropy.io import fits
 from astropy.table import join
+from astropy.wcs import WCS
 
 cwd = os.path.dirname(os.path.realpath(__file__))
 pd = os.path.abspath(os.path.join(cwd,'..'))
@@ -46,43 +47,43 @@ def test_check_overlap():
     # For a cutout around a coordinate in the image, but the cutout spills over the edge, it returns False.
     # For a cutout around a coordinate not in the image, it returns False. 
 
-    path = 'testdata/Roman_TDS_simple_model_R062_6_17.fits.gz'
+    path = './testdata/Roman_TDS_simple_model_R062_6_17.fits.gz'
 
     with fits.open(path) as hdu:
-        x_in, y_in = hdu[0].header['CRPIX1'], hdu[0].header['CRPIX2']
+        ra_in, dec_in = hdu[0].header['CRVAL1'], hdu[0].header['CRVAL2']
 
-    x_out, y_out = (4089, 4089)
+    ra_out, dec_out = (ra_in+1, dec_in+1)
 
-    check1 = check_overlap(x_in,y_in,path,overlap_size=4088,data_ext=1)
-    check2 = check_overlap(x_in,y_in,path,overlap_size=4089,data_ext=1)
-    check3 = check_overlap(x_out,y_out,path,overlap_size=4088,data_ext=1)
+    check1 = check_overlap(ra_in,dec_in,path,overlap_size=4088,data_ext=1)
+    check2 = check_overlap(ra_in,dec_in,path,overlap_size=4089,data_ext=1)
+    check3 = check_overlap(ra_out,dec_out,path,overlap_size=4088,data_ext=1)
 
     assert check1
     assert not check2
     assert not check3
 
-# def test_sfft():
-#     # Use srun --mem=128GB --pty bash -i to run in an interactive kernel, or it gets OOM killed. 
-#     # Test that for two images that do not overlap, it does not proceed with the procedure.
-#     # For two of the same image, the result is 0 (or approx. 0)
+def test_sfft():
+    # Use srun --mem=128GB --pty bash -i to run in an interactive kernel, or it gets OOM killed. 
+    # Test that for two images that do not overlap, it does not proceed with the procedure.
+    # For two of the same image, the result is 0 (or approx. 0)
 
-#     path = 'testdata/Roman_TDS_simple_model_R062_6_17.fits.gz'
-#     with fits.open(path) as hdu:
-#         ra, dec = hdu[0].header['CRVAL1'], hdu[0].header['CRVAL2']
+    path = 'testdata/Roman_TDS_simple_model_R062_6_17.fits.gz'
+    with fits.open(path) as hdu:
+        ra, dec = hdu[0].header['CRVAL1'], hdu[0].header['CRVAL2']
 
-#     # This test fails, and it should, but it fails because it crashes and 
-#     # does not fail elegantly right now. 
-#     # test1a, test1b = sfft(ra,dec,'R062',6,17,6,18)
-#     test2a, test2b = sfft(ra,dec,'R062',6,17,6,17)
+    # This test fails, and it should, but it fails because it crashes and 
+    # does not fail elegantly right now. 
+    # test1a, test1b = sfft(ra,dec,'R062',6,17,6,18)
+    test2a, test2b = sfft(ra,dec,'R062',6,17,6,17)
 
-#     with fits.open(test2a) as hdu:
-#         img = hdu[0].data
+    with fits.open(test2a) as hdu:
+        img = hdu[0].data
 
-#     mean = np.mean(img)
-#     std = np.std(img)
+    mean = np.mean(img)
+    std = np.std(img)
 
-#     # assert test1a is None
-#     # assert test1b is None
-#     assert isinstance(test2a, str)
-#     assert isinstance(test2b, str)
-#     assert mean-std < mean < mean+std
+    # assert test1a is None
+    # assert test1b is None
+    assert isinstance(test2a, str)
+    assert isinstance(test2b, str)
+    assert mean-std < mean < mean+std
