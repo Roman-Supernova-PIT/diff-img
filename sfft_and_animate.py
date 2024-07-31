@@ -231,7 +231,7 @@ def run(oid,band,n_templates=1,verbose=False):
                 skysub_stamp_savepath = f'/work/lna18/imsub_out/skysub/stamps/skysub_stamp_{oid}_{band}_{sci_pointing}_{sci_sca}_-_{t_pointing}_{t_sca}.fits'
 
                 ddstamppath = stampmaker(ra,dec,ddimgpath,savepath=dd_stamp_savepath,shape=np.array([100,100]))
-                skysubstamppath = stampmaker(ra,dec,ddimgpath,savepath=skysub_stamp_savepath,shape=np.array([100,100]))
+                skysubstamppath = stampmaker(ra,dec,sci_skysub_path,savepath=skysub_stamp_savepath,shape=np.array([100,100]))
             
                 # Prepare information for animations.
                 pointings.append(sci_pointing)
