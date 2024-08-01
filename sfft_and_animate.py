@@ -58,7 +58,7 @@ def sn_in_or_out(oid,start,end,band,infodir='/hpc/group/cosmology/lna18/'):
 
     return in_tab, out_tab
 
-def check_overlap(ra,dec,imgpath,data_ext=0,overlap_size=1000,verbose=False,show_cutout=False):
+def check_overlap(ra,dec,imgpath,data_ext=0,overlap_size=500,verbose=False,show_cutout=False):
     """
     Does the science and template images sufficiently overlap, centered on
     the specified RA, dec coordinates (SN location)?
@@ -113,7 +113,9 @@ def sfft(ra,dec,band,sci_pointing,sci_sca,
     sci_skysub_path = sky_subtract(band=band,pointing=sci_pointing,sca=sci_sca)
     t_filepath = _build_filepath(None,band,t_pointing,t_sca,'image')
     t_skysub = sky_subtract(path=t_filepath)
-    t_align = imalign(template_path=sci_skysub_path,sci_path=t_skysub) # NOTE: This is correct, not flipped.
+
+    t_align_savename = f'skysub_Roman_TDS_simple_model_{band}_{t_pointing}_{t_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits'
+    t_align = imalign(template_path=sci_skysub_path,sci_path=t_skysub,savename=t_align_savename) # NOTE: This is correct, not flipped.
 
     template_overlap = check_overlap(ra,dec,t_align,verbose=verbose)
     science_overlap = check_overlap(ra,dec,sci_skysub_path,verbose=verbose)
