@@ -115,7 +115,7 @@ def sfft(ra,dec,band,sci_pointing,sci_sca,
     t_skysub = sky_subtract(path=t_filepath)
 
     t_align_savename = f'skysub_Roman_TDS_simple_model_{band}_{t_pointing}_{t_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits'
-    t_align = imalign(template_path=sci_skysub_path,sci_path=t_skysub,savename=t_align_savename) # NOTE: This is correct, not flipped.
+    t_align = imalign(template_path=sci_skysub_path,sci_path=t_skysub,savename=t_align_savename,force=True) # NOTE: This is correct, not flipped.
 
     template_overlap = check_overlap(ra,dec,t_align,verbose=verbose)
     science_overlap = check_overlap(ra,dec,sci_skysub_path,verbose=verbose)
@@ -135,7 +135,9 @@ def sfft(ra,dec,band,sci_pointing,sci_sca,
             print('\n')
 
         t_imsim_psf = get_imsim_psf(ra,dec,band,t_pointing,t_sca)
-        t_psf_path = rotate_psf(ra,dec,t_imsim_psf,sci_skysub_path,force=True)
+
+        rot_psf_name = f'rot_psf_{band}_{t_pointing}_{t_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits'
+        t_psf_path = rotate_psf(ra,dec,t_imsim_psf,sci_skysub_path,savename=rot_psf_name,force=True)
         if verbose:
             print('\n')
             print('Path to template PSF:')
