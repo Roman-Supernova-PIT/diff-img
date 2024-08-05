@@ -23,7 +23,7 @@ from phrosty.photometry import ap_phot, psfmodel, psf_phot, crossmatch
 
 ###########################################################################
 
-def set_sn(oid):
+def get_sn_info(oid):
     """
     Retrieve RA, Dec, MJD start, MJD end for specified object ID.  
     """
@@ -36,6 +36,8 @@ def sn_in_or_out(oid,start,end,band,infodir='/hpc/group/cosmology/lna18/'):
     """
     Retrieve pointings that contain and do not contain the specified SN,
     per the truth files by MJD. 
+
+    Returns a tuple of astropy tables (images with the SN, images without the SN).
     """
     transient_info_file = os.path.join(
         infodir, f'roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_instances_nomjd.csv'
@@ -45,12 +47,12 @@ def sn_in_or_out(oid,start,end,band,infodir='/hpc/group/cosmology/lna18/'):
     tab.sort('pointing')
     tab = tab[tab['filter'] == band]
 
-    in_tab_all = get_mjd_info(start,end)
-    in_rows = np.where(np.isin(tab['pointing'],in_tab_all['pointing']))[0]
+    in_all = get_mjd_info(start,end)
+    in_rows = np.where(np.isin(tab['pointing'],in_all['pointing']))[0]
     in_tab = tab[in_rows]
 
-    out_tab_all = get_mjd_info(start,end,return_inverse=True)
-    out_rows = np.where(np.isin(tab['pointing'],out_tab_all['pointing']))[0]
+    out_all = get_mjd_info(start,end,return_inverse=True)
+    out_rows = np.where(np.isin(tab['pointing'],out_all['pointing']))[0]
     out_tab = tab[out_rows]
 
     return in_tab, out_tab
@@ -491,7 +493,7 @@ def make_lc_plot(oid, band, start, end, lc_filename, plot_filename):
 
 def run(oid, band, n_templates=1, inputdir=".", outputdir="."):
 
-    ra,dec,start,end = set_sn(oid)
+    ra,dec,start,end = get_sn_info(oid)
     coord = SkyCoord(ra=ra * u.deg, dec=dec * u.deg)
     in_tab,out_tab = sn_in_or_out(oid,start,end,band)
     template_tab = out_tab[:n_templates]
@@ -525,14 +527,14 @@ def parse_and_run():
         prog="mk_lc", description="Photometry for a given SN"
     )
     parser.add_argument(
-        "oid", type=int, help="ID of transient.  Used to look up hard-coded information on transient."
+        "oid", type=int, help="ID of transient.  Used to look up information on transient."
     )
     parser.add_argument(
         "--band",
         type=str,
         default=None,
         choices=[None, "F184", "H158", "J129", "K213", "R062", "Y106", "Z087"],
-        help="Filter to use.  None to use all available.  Overriding by --slurm_array.",
+        help="Filter to use.  None to use all available.  Overridden by --slurm_array.",
     )
 
     parser.add_argument(
@@ -576,5 +578,3 @@ def parse_and_run():
 
 if __name__ == "__main__":
     parse_and_run()
-
-    oid = 20172782

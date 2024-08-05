@@ -12,18 +12,19 @@ from astropy.coordinates import SkyCoord
 from astropy.visualization import ZScaleInterval
 from astropy.io import fits
 from astropy.nddata import Cutout2D
-from astropy.wcs import WCS
+from astropy.wcs import WCS, NoConvergence
+from astropy.wcs.utils import skycoord_to_pixel
 from astropy.nddata.utils import PartialOverlapError, NoOverlapError
 import astropy.units as u
 
 # IMPORTS Internal:
 from phrosty.imagesubtraction import sky_subtract, imalign, get_imsim_psf, rotate_psf, crossconvolve, difference, decorr_kernel, decorr_img, stampmaker
 from phrosty.plotting import animate_stamps
-from phrosty.utils import get_transient_radec, get_transient_mjd, get_mjd_info, _build_filepath
+from phrosty.utils import get_transient_radec, get_transient_mjd, get_mjd_info, _build_filepath, get_fitsobj
 
 ###########################################################################
 
-def set_sn(oid):
+def get_sn_info(oid):
     """
     Retrieve RA, Dec, MJD start, MJD end for specified object ID.  
     """
@@ -36,6 +37,8 @@ def sn_in_or_out(oid,start,end,band,infodir='/hpc/group/cosmology/lna18/'):
     """
     Retrieve pointings that contain and do not contain the specified SN,
     per the truth files by MJD. 
+
+    Returns a tuple of astropy tables (images with the SN, images without the SN).
     """
     transient_info_file = os.path.join(
         infodir, f'roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_instances_nomjd.csv'
@@ -45,42 +48,53 @@ def sn_in_or_out(oid,start,end,band,infodir='/hpc/group/cosmology/lna18/'):
     tab.sort('pointing')
     tab = tab[tab['filter'] == band]
 
-    in_tab_all = get_mjd_info(start,end)
-    in_rows = np.where(np.isin(tab['pointing'],in_tab_all['pointing']))[0]
+    in_all = get_mjd_info(start,end)
+    in_rows = np.where(np.isin(tab['pointing'],in_all['pointing']))[0]
     in_tab = tab[in_rows]
 
-    out_tab_all = get_mjd_info(start,end,return_inverse=True)
-    out_rows = np.where(np.isin(tab['pointing'],out_tab_all['pointing']))[0]
+    out_all = get_mjd_info(start,end,return_inverse=True)
+    out_rows = np.where(np.isin(tab['pointing'],out_all['pointing']))[0]
     out_tab = tab[out_rows]
 
     return in_tab, out_tab
 
-def check_overlap(ra,dec,temp_path,sci_path,data_ext=0,overlap_size=1000,verbose=False):
+def check_overlap(ra,dec,imgpath,data_ext=0,overlap_size=500,verbose=False,show_cutout=False):
     """
-    Check that the science and template images sufficiently overlap, centered on
-    the specified RA/Dec (SN location).
+    Does the science and template images sufficiently overlap, centered on
+    the specified RA, dec coordinates (SN location)?
     """
-    with fits.open(temp_path) as hdu:
-        temp_img = hdu[data_ext].data
-        ra = hdu[0].header['CRVAL1']
-        dec = hdu[0].header['CRVAL2']
+    
+    with fits.open(imgpath) as hdu:
+        img = hdu[data_ext].data
+        wcs = WCS(hdu[data_ext].header)
         
-    with fits.open(sci_path) as hdu:
-        sci_wcs = WCS(hdu[0].header)
+    coord = SkyCoord(ra=ra*u.deg,dec=dec*u.deg)
+    pxcoords = skycoord_to_pixel(coord,wcs)
+
     try:
-        coord = SkyCoord(ra=ra*u.deg,dec=dec*u.deg)
-        ref_cutout = Cutout2D(temp_img,coord,overlap_size,wcs=sci_wcs,mode='partial')
+        cutout = Cutout2D(img,pxcoords,overlap_size,mode='strict')
+        if show_cutout:
+            z1,z2 = ZScaleInterval(n_samples=1000,
+            contrast=0.25,
+            max_reject=0.5,
+            min_npixels=5,
+            krej=2.5,
+            max_iterations=5,
+            ).get_limits(cutout.data)
+
+            plt.figure()
+            plt.imshow(cutout.data, vmin=z1, vmax=z2, cmap='Greys')
+
+            plt.show()
 
         if verbose:
-            print('The following images overlap sufficiently:')
-            print(temp_path)
-            print(sci_path)
+            print(f'The image {imgpath} contains sufficient overlap around coordinates {ra}, {dec}.')
 
         return True
 
     except (PartialOverlapError, NoOverlapError):
         if verbose:
-            print(f'{temp_path} does not sufficiently overlap with the SN. ')
+            print(f'{imgpath} does not sufficiently overlap with the SN. ')
         return False
 
 def sfft(ra,dec,band,sci_pointing,sci_sca,
@@ -95,28 +109,41 @@ def sfft(ra,dec,band,sci_pointing,sci_sca,
     6. Applying decorrelation kernel to difference image and cross-convolved science image
 
     """
+
     sci_skysub_path = sky_subtract(band=band,pointing=sci_pointing,sca=sci_sca)
-    sci_psf_path = get_imsim_psf(ra,dec,band,sci_pointing,sci_sca)
-    if verbose:
-        print('\n')
-        print('Path to science PSF:')
-        print(sci_psf_path)
-        print('\n')
-
-    t_imsim_psf = get_imsim_psf(ra,dec,band,t_pointing,t_sca)
-    t_psf_path = rotate_psf(ra,dec,t_imsim_psf,sci_skysub_path,force=True)
-    if verbose:
-        print('\n')
-        print('Path to template PSF:')
-        print(t_psf_path)
-        print('\n')
-
     t_filepath = _build_filepath(None,band,t_pointing,t_sca,'image')
     t_skysub = sky_subtract(path=t_filepath)
-    t_align = imalign(template_path=sci_skysub_path,sci_path=t_skysub) # NOTE: This is correct, not flipped.
 
-    overlap = check_overlap(ra,dec,t_align,sci_skysub_path,verbose=verbose)
-    if overlap:
+    t_align_savename = f'skysub_Roman_TDS_simple_model_{band}_{t_pointing}_{t_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits'
+    t_align = imalign(template_path=sci_skysub_path,sci_path=t_skysub,savename=t_align_savename,force=True) # NOTE: This is correct, not flipped.
+
+    template_overlap = check_overlap(ra,dec,t_align,verbose=verbose)
+    science_overlap = check_overlap(ra,dec,sci_skysub_path,verbose=verbose)
+
+    if not template_overlap or not science_overlap:
+        if verbose:
+            print(f'Images {band} {sci_pointing} {sci_sca} and {band} {t_pointing} {t_sca} do not sufficiently overlap to do image subtraction.')
+
+        return None, None
+
+    else:
+        sci_psf_path = get_imsim_psf(ra,dec,band,sci_pointing,sci_sca)
+        if verbose:
+            print('\n')
+            print('Path to science PSF:')
+            print(sci_psf_path)
+            print('\n')
+
+        t_imsim_psf = get_imsim_psf(ra,dec,band,t_pointing,t_sca)
+
+        rot_psf_name = f'rot_psf_{band}_{t_pointing}_{t_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits'
+        t_psf_path = rotate_psf(ra,dec,t_imsim_psf,sci_skysub_path,savename=rot_psf_name,force=True)
+        if verbose:
+            print('\n')
+            print('Path to template PSF:')
+            print(t_psf_path)
+            print('\n')
+
         sci_conv, temp_conv = crossconvolve(sci_skysub_path,sci_psf_path,t_align,t_imsim_psf,force=True)
         if verbose:
             print('\n')
@@ -167,15 +194,9 @@ def sfft(ra,dec,band,sci_pointing,sci_sca,
 
         return sci_skysub_path, decorr_imgpath
 
-    elif not overlap:
-        if verbose:
-            print(f'Images {band} {sci_pointing} {sci_sca} and {band} {t_pointing} {t_sca} do not sufficiently overlap to do image subtraction.')
-
-        return None, None
-
 def animate(frames,labels,oid,band,savename,artist='Lauren Aldoroty',savedir='/hpc/group/cosmology/lna18/roman_sim_imgs/Roman_Rubin_Sims_2024/gifs/'):
     """
-    Animate a series of frames. 
+    Animate a series of frames. Saves an animated GIF to the specified directory and filename. 
     """
     # NOTE: I still need to align the images to the same WCS for the animations. 
     if not os.path.exists(savedir):
@@ -188,7 +209,7 @@ def animate(frames,labels,oid,band,savename,artist='Lauren Aldoroty',savedir='/h
 
 def run(oid,band,n_templates=1,verbose=False):
 
-    ra,dec,start,end = set_sn(oid)
+    ra,dec,start,end = get_sn_info(oid)
     in_tab,out_tab = sn_in_or_out(oid,start,end,band)
 
     template_tab = out_tab[:n_templates]
@@ -214,7 +235,7 @@ def run(oid,band,n_templates=1,verbose=False):
                 skysub_stamp_savepath = f'/work/lna18/imsub_out/skysub/stamps/skysub_stamp_{oid}_{band}_{sci_pointing}_{sci_sca}_-_{t_pointing}_{t_sca}.fits'
 
                 ddstamppath = stampmaker(ra,dec,ddimgpath,savepath=dd_stamp_savepath,shape=np.array([100,100]))
-                skysubstamppath = stampmaker(ra,dec,ddimgpath,savepath=skysub_stamp_savepath,shape=np.array([100,100]))
+                skysubstamppath = stampmaker(ra,dec,skysubimgpath,savepath=skysub_stamp_savepath,shape=np.array([100,100]))
             
                 # Prepare information for animations.
                 pointings.append(sci_pointing)
@@ -259,7 +280,7 @@ def parse_and_run():
     parser.add_argument(
         'oid', 
         type=int, 
-        help='ID of transient. Used to look up hard-coded information on transient.'
+        help='ID of transient. Used to look up information on transient.'
     )
 
     parser.add_argument(
@@ -267,7 +288,7 @@ def parse_and_run():
         type=str,
         default=None,
         choices=[None, "F184", "H158", "J129", "K213", "R062", "Y106", "Z087"],
-        help="Filter to use.  None to use all available.  Overriding by --slurm_array.",
+        help="Filter to use.  None to use all available.  Overridden by --slurm_array.",
     )
 
     parser.add_argument(
@@ -305,4 +326,3 @@ def parse_and_run():
 
 if __name__ == '__main__':
     parse_and_run()
-    oid = 20172782
