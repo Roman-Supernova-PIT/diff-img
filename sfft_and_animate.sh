@@ -9,7 +9,7 @@
 #SBATCH --mail-type=ALL
 #SBATCH --ntasks 5 # IMPORTANT: This is now the number of templates. 
 #SBATCH --cpus-per-task 1
-#SBATCH --array=1
+#SBATCH --array=1-7
 
 # Need these lines if using GPU: 
 ##SBATCH -p gpu-common
@@ -21,15 +21,11 @@ source ~/.bashrc
 conda activate repeatability
 
 # Run program. 
-# As job array:
-python -u sfft_and_animate.py 20172782 --verbose True --slurm_array
+sne=( '20172782' )
+# sne=( 20172117 20172782 20173305 20174023 20174118 20174370 20175077 20177380 20172328 20173301 20173373 20174108 20174213 20174542 20175568 20202893 )
 
-# Loop through bands:
-# bands=( R062 Z087 Y106 J129 H158 F184 K213 )
-
-# for j in "${bands[@]}"
-# do
-#     echo 20172117
-#     echo "$j"
-#     python -u sfft_and_animate.py 20172117 "$j"
-# done
+for sn in "${sne[@]}"
+do
+    echo "$sn"
+    srun python -u sfft_and_animate.py "$sn" --verbose True --slurm_array
+done
