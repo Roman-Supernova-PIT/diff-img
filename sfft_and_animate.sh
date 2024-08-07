@@ -7,8 +7,7 @@
 #SBATCH --output=/hpc/group/cosmology/lna18/rsim_photometry/dcc_output/sfft/sfft-%J.out
 #SBATCH --mail-user=lauren.aldoroty@duke.edu
 #SBATCH --mail-type=ALL
-#SBATCH --ntasks 5 # IMPORTANT: This is now the number of templates. 
-#SBATCH --cpus-per-task 1
+#SBATCH --cpus-per-task 5 # IMPORTANT: This is now the number of templates. 
 #SBATCH --array=1-7
 
 # Need these lines if using GPU: 

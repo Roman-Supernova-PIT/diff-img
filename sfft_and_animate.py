@@ -266,9 +266,7 @@ def run(oid,band,template_info,verbose=False):
     animate(skysub_stamps,pointings,oid,band,f'{oid}/{oid}_{band}_RAW.gif')
 
 def multiproc_run(oid,band,verbose=False):
-    n_tasks = int(os.environ['SLURM_NTASKS'])
-    n_cpus = int(os.environ['SLURM_CPUS_PER_TASK'])
-    n_templates = n_tasks * n_cpus
+    n_templates = int(os.environ['SLURM_CPUS_PER_TASK'])
     templates = get_templates(oid,band,n_templates=n_templates,verbose=verbose)
     n_process = len(templates)
 
