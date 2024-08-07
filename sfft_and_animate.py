@@ -1,4 +1,6 @@
 # IMPORTS Standard:
+from multiprocessing import Pool
+from functools import partial
 import argparse
 import os
 import sys
@@ -8,6 +10,7 @@ import numpy as np
 
 # IMPORTS Astro:
 from astropy.table import Table
+from astropy.table.table_helpers import simple_table
 from astropy.coordinates import SkyCoord
 from astropy.visualization import ZScaleInterval
 from astropy.io import fits
@@ -207,8 +210,7 @@ def animate(frames,labels,oid,band,savename,artist='Lauren Aldoroty',savedir='/h
 
     animate_stamps(frames,savepath,metadata,labels,staticlabel=band)
 
-def run(oid,band,n_templates=1,verbose=False):
-
+def get_templates(oid,band,n_templates=1,verbose=False):
     ra,dec,start,end = get_sn_info(oid)
     in_tab,out_tab = sn_in_or_out(oid,start,end,band)
 
@@ -217,42 +219,61 @@ def run(oid,band,n_templates=1,verbose=False):
         print('The template images are:')
         print(template_tab)
 
-    for t_row in template_tab:
-        t_pointing, t_sca = t_row['pointing'], t_row['sca']
+    template_list = [dict(zip(template_tab.colnames,row)) for row in template_tab]
 
-        dd_stamps = []
-        skysub_stamps = []
-        pointings = []
-        for row in in_tab:
-            print('*************************************************************')
-            sci_pointing, sci_sca = row['pointing'], row['sca']
-            print(band,sci_pointing,sci_sca,'-',band,t_pointing,t_sca)
+    return template_list
 
-            skysubimgpath, ddimgpath = sfft(ra,dec,band,sci_pointing,sci_sca,t_pointing,t_sca,verbose=verbose)
-            if skysubimgpath is not None:
-                # Make stamps.
-                dd_stamp_savepath = f'/work/lna18/imsub_out/decorr/stamps/dd_stamp_{oid}_{band}_{sci_pointing}_{sci_sca}_-_{t_pointing}_{t_sca}.fits'
-                skysub_stamp_savepath = f'/work/lna18/imsub_out/skysub/stamps/skysub_stamp_{oid}_{band}_{sci_pointing}_{sci_sca}_-_{t_pointing}_{t_sca}.fits'
+def run(oid,band,template_info,verbose=False):
+    ra,dec,start,end = get_sn_info(oid)
+    in_tab,out_tab = sn_in_or_out(oid,start,end,band)
 
-                ddstamppath = stampmaker(ra,dec,ddimgpath,savepath=dd_stamp_savepath,shape=np.array([100,100]))
-                skysubstamppath = stampmaker(ra,dec,skysubimgpath,savepath=skysub_stamp_savepath,shape=np.array([100,100]))
-            
-                # Prepare information for animations.
-                pointings.append(sci_pointing)
-                with fits.open(ddstamppath) as ddhdu:
-                    ddimg = ddhdu[0].data
-                    dd_stamps.append(ddimg)
+    t_pointing, t_sca = template_info['pointing'], template_info['sca']
 
-                with fits.open(skysubstamppath) as skysubhdu:
-                    skysubimg = skysubhdu[0].data
-                    skysub_stamps.append(skysubimg)
+    dd_stamps = []
+    skysub_stamps = []
+    pointings = []
+    for row in in_tab:
+        print('*************************************************************')
+        sci_pointing, sci_sca = row['pointing'], row['sca']
+        print(band,sci_pointing,sci_sca,'-',band,t_pointing,t_sca)
 
-            # Make animations.
-            # They are saved with the SN ID, followed by the image used as a template.
-            animate(dd_stamps,pointings,oid,band,f'{oid}/{oid}_{band}_{t_pointing}_{t_sca}_SFFT.gif')
+        skysubimgpath, ddimgpath = sfft(ra,dec,band,sci_pointing,sci_sca,t_pointing,t_sca,verbose=verbose)
+        if skysubimgpath is not None:
+            # Make stamps.
+            dd_stamp_savepath = f'/work/lna18/imsub_out/decorr/stamps/dd_stamp_{oid}_{band}_{sci_pointing}_{sci_sca}_-_{t_pointing}_{t_sca}.fits'
+            skysub_stamp_savepath = f'/work/lna18/imsub_out/skysub/stamps/skysub_stamp_{oid}_{band}_{sci_pointing}_{sci_sca}_-_{t_pointing}_{t_sca}.fits'
+
+            ddstamppath = stampmaker(ra,dec,ddimgpath,savepath=dd_stamp_savepath,shape=np.array([100,100]))
+            skysubstamppath = stampmaker(ra,dec,skysubimgpath,savepath=skysub_stamp_savepath,shape=np.array([100,100]))
+        
+            # Prepare information for animations.
+            pointings.append(sci_pointing)
+            with fits.open(ddstamppath) as ddhdu:
+                ddimg = ddhdu[0].data
+                dd_stamps.append(ddimg)
+
+            with fits.open(skysubstamppath) as skysubhdu:
+                skysubimg = skysubhdu[0].data
+                skysub_stamps.append(skysubimg)
+
+    # Make animations.
+    # They are saved with the SN ID, followed by the image used as a template.
+    animate(dd_stamps,pointings,oid,band,f'{oid}/{oid}_{band}_{t_pointing}_{t_sca}_SFFT.gif')
 
     # I don't need N_templates animations for the sky subtracted-only images, so this is out of the loop.
     animate(skysub_stamps,pointings,oid,band,f'{oid}/{oid}_{band}_RAW.gif')
+
+def multiproc_run(oid,band,verbose=False):
+    n_tasks = int(os.environ['SLURM_NTASKS'])
+    n_cpus = int(os.environ['SLURM_CPUS_PER_TASK'])
+    n_templates = n_tasks * n_cpus
+    templates = get_templates(oid,band,n_templates=n_templates,verbose=verbose)
+    n_process = len(templates)
+
+    partialfunc = partial(run,oid,band,verbose=verbose)
+
+    with Pool(n_process) as pool:
+        process = pool.map(partialfunc, templates)
 
 def parse_slurm():
     """
@@ -261,15 +282,14 @@ def parse_slurm():
     sys.path.append(os.getcwd())
     taskID = int(os.environ["SLURM_ARRAY_TASK_ID"])
 
-    print("taskID", taskID)
+    print("taskID:", taskID)
 
     config = {1: "F184", 2: "H158", 3: "J129", 4: "K213", 5: "R062", 6: "Y106", 7: "Z087"}
 
     band = config[taskID]
-    print('band', band)
+    print('Band:', band)
 
     return band
-
 
 def parse_and_run():
     parser = argparse.ArgumentParser(
@@ -289,13 +309,6 @@ def parse_and_run():
         default=None,
         choices=[None, "F184", "H158", "J129", "K213", "R062", "Y106", "Z087"],
         help="Filter to use.  None to use all available.  Overridden by --slurm_array.",
-    )
-
-    parser.add_argument(
-        'n_templates',
-        type=int,
-        default=1,
-        help='Number of template images to use.'
     )
 
     parser.add_argument(
@@ -321,7 +334,7 @@ def parse_and_run():
         print("Must specify either '--band' xor ('--slurm_array' and have SLURM_ARRAY_TASK_ID defined).")
         sys.exit()
 
-    run(args.oid, args.band, args.n_templates, args.verbose)
+    multiproc_run(args.oid, args.band, args.verbose)
     print("FINISHED!")
 
 if __name__ == '__main__':
