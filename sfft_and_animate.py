@@ -12,12 +12,11 @@ import numpy as np
 
 # IMPORTS Astro:
 from astropy.table import Table
-from astropy.table.table_helpers import simple_table
 from astropy.coordinates import SkyCoord
 from astropy.visualization import ZScaleInterval
 from astropy.io import fits
 from astropy.nddata import Cutout2D
-from astropy.wcs import WCS, NoConvergence
+from astropy.wcs import WCS
 from astropy.wcs.utils import skycoord_to_pixel
 from astropy.nddata.utils import PartialOverlapError, NoOverlapError
 import astropy.units as u
@@ -25,7 +24,7 @@ import astropy.units as u
 # IMPORTS Internal:
 from phrosty.imagesubtraction import sky_subtract, imalign, get_imsim_psf, rotate_psf, crossconvolve, difference, decorr_kernel, decorr_img, stampmaker
 from phrosty.plotting import animate_stamps
-from phrosty.utils import get_transient_radec, get_transient_mjd, get_mjd_info, _build_filepath, get_fitsobj
+from phrosty.utils import get_transient_radec, get_transient_mjd, get_mjd_info, _build_filepath
 
 ###########################################################################
 
@@ -274,7 +273,7 @@ def run(oid,band,n_templates=1,verbose=False):
 
     if verbose:
         start_time = time.time()
-        
+
     ra,dec,start,end = get_sn_info(oid)
     template_list = get_templates(oid,band,n_templates,verbose=verbose)
     science_list = get_science(oid,band,verbose=verbose)
