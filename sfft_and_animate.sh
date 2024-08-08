@@ -7,8 +7,8 @@
 #SBATCH --output=/hpc/group/cosmology/lna18/rsim_photometry/dcc_output/sfft/sfft-%J.out
 #SBATCH --mail-user=lauren.aldoroty@duke.edu
 #SBATCH --mail-type=ALL
-#SBATCH --cpus-per-task 5 # IMPORTANT: This is now the number of templates. 
-#SBATCH --array=1-7
+#SBATCH --cpus-per-task 5
+#SBATCH --array=1
 
 # Need these lines if using GPU: 
 ##SBATCH -p gpu-common
@@ -21,10 +21,10 @@ conda activate repeatability
 
 # Run program. 
 sne=( '20172782' )
-# sne=( 20172117 20172782 20173305 20174023 20174118 20174370 20175077 20177380 20172328 20173301 20173373 20174108 20174213 20174542 20175568 20202893 )
+# sne=( '20172117' '20172782' '20173305' '20174023' '20174118' '20174370' '20175077' '20177380' '20172328' '20173301' '20173373' '20174108' '20174213' '20174542' '20175568' '20202893' )
 
 for sn in "${sne[@]}"
 do
     echo "$sn"
-    srun python -u sfft_and_animate.py "$sn" --verbose True --slurm_array
+    srun python -u sfft_and_animate.py "$sn" --n-templates 5 --verbose True --slurm_array
 done
