@@ -1,15 +1,21 @@
 # IMPORTS Standard:
-from multiprocessing import Pool, Manager
+import dask.bag as db
+import logging
+import tracemalloc
+from multiprocessing import Pool, Manager, current_process
+from multiprocessing.managers import SharedMemoryManager
 from functools import partial
 import itertools
 import argparse
 import os
 import sys
+import re
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import time
 
 # Make numpy stop thread hogging. 
+# I don't think I need this if I have it in the batch file, right? 
 os.environ['OPENBLAS_NUM_THREADS'] = '1'
 os.environ['MKL_NUM_THREADS'] = '1'
 os.environ['NUMEXPR_NUM_THREADS'] = '1'
@@ -123,11 +129,32 @@ def sfft(ra,dec,band,pair_info,
 
     """
 
+    # Get process name. 
+    me = current_process()
+    match = re.search( '([0-9]+)', me.name)
+    if match is not None:
+        proc = match.group(1)
+    else:
+        proc = str(me.pid)
+
+    # Configure logger (Rob)
+    logger = logging.getLogger(f'sfft_{proc}')
+    if not logger.hasHandlers():
+        log_out = logging.StreamHandler(sys.stderr)
+        formatter = logging.Formatter(f'[%(asctime)s - {proc} - %(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+        log_out.setFormatter(formatter)
+        logger.addHandler(log_out)
+        logger.setLevel(logging.DEBUG) # ERROR, WARNING, INFO, or DEBUG (in that order by increasing detail)
+
+    logger.debug('~~~~~~~~~~~~~~~~STARTING SFFT!~~~~~~~~~~~~~~~~')
     t_info, sci_info = pair_info
     sci_pointing, sci_sca = sci_info['pointing'], sci_info['sca']
     t_pointing, t_sca = t_info['pointing'], t_info['sca']
 
-    print(' ********************************************************','\n','Template image:',band,t_pointing,t_sca,'\n','Science image:',band,sci_pointing,sci_sca,'\n','********************************************************')
+    logger.debug(f' ********************************************************'
+                 f'\n'
+                 f'Template image: {band} {t_pointing} {t_sca} \n'
+                 f'Science image: {band} {sci_pointing} {sci_sca} \n ********************************************************')
     
     sci_skysub_path = os.path.join(skysub_dir,f'skysub_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}.fits')
     t_skysub = sci_skysub_path = os.path.join(skysub_dir,f'skysub_Roman_TDS_simple_model_{band}_{t_pointing}_{t_sca}.fits')
@@ -140,93 +167,61 @@ def sfft(ra,dec,band,pair_info,
 
     if not template_overlap or not science_overlap:
         if verbose:
-            print(f'Images {band} {sci_pointing} {sci_sca} and {band} {t_pointing} {t_sca} do not sufficiently overlap to do image subtraction.')
+            logger.debug(f'{proc} Images {band} {sci_pointing} {sci_sca} and {band} {t_pointing} {t_sca} do not sufficiently overlap to do image subtraction.')
 
         return None, None
 
     else:
         sci_psf_path = get_imsim_psf(ra,dec,band,sci_pointing,sci_sca)
         if verbose:
-            print('\n')
-            print('Path to science PSF:')
-            print(sci_psf_path)
-            print('\n')
+            logger.debug(f'Path to science PSF: \n {sci_psf_path}')
 
-        t_imsim_psf = get_imsim_psf(ra,dec,band,t_pointing,t_sca)
+        t_imsim_psf = get_imsim_psf(ra,dec,band,t_pointing,t_sca,logger=logger)
 
         rot_psf_name = f'rot_psf_{band}_{t_pointing}_{t_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits'
         t_psf_path = rotate_psf(ra,dec,t_imsim_psf,sci_skysub_path,savename=rot_psf_name,force=True)
         if verbose:
-            print('\n')
-            print('Path to template PSF:')
-            print(t_psf_path)
-            print('\n')
+            logger.debug(f'Path to template PSF: \n {t_psf_path}')
 
         sci_conv_name = f'conv_sci_Roman_TDS_simple_model_{band}_{t_pointing}_{t_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits'
         ref_conv_name = f'conv_ref_Roman_TDS_simple_model_{band}_{t_pointing}_{t_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits'
         sci_conv, temp_conv = crossconvolve(sci_skysub_path,sci_psf_path,t_align,t_imsim_psf,sci_outname=sci_conv_name,ref_outname=ref_conv_name,force=True)
         if verbose:
-            print('\n')
-            print('Path to cross-convolved science image:')
-            print(sci_conv)
-            print('Path to cross-convolved template image:')
-            print(temp_conv)
-            print('\n')
+            logger.debug(f'Path to cross-convolved science image: \n {sci_conv} \n Path to cross-convolved template image: \n {temp_conv}')
 
         diff_savename = f'{band}_{sci_pointing}_{sci_sca}_-_{t_pointing}_{t_sca}.fits' # 'diff_' gets appended to the beginning of this
         diff, soln = difference(sci_conv,temp_conv,sci_psf_path,t_psf_path,savename=diff_savename,backend='Numpy',force=True)
         if verbose:
-            print('\n')
-            print('Path to differenced image:')
-            print(diff)
-            print('\n')
+            logger.debug(f'Path to differenced image: \n {diff}')
         
         dcker_savename = f'dcker_{band}_{sci_pointing}_{sci_sca}_-_{t_pointing}_{t_sca}.fits'
         dcker_path = decorr_kernel(sci_skysub_path,t_skysub,sci_psf_path,t_psf_path,diff,soln,savename=dcker_savename)
         if verbose:
-            print('\n')
-            print('Path to decorrelation kernel:')
-            print(dcker_path)
-            print('\n')
+            logger.debug(f'Path to decorrelation kernel: \n {dcker_path}')
         
         decorr_imgpath = decorr_img(diff,dcker_path)
         if verbose:
-            print('\n')
-            print('Path to final decorrelated differenced image:')
-            print(decorr_imgpath)
-            print('\n')
+            logger.debug(f'Path to final decorrelated differenced image: \n {decorr_imgpath}')
 
         zpt_savename = f'zptimg_{band}_{sci_pointing}_{sci_sca}_-_{t_pointing}_{t_sca}.fits'
         zpt_imgpath = decorr_img(sci_conv,dcker_path,savename=zpt_savename)
         if verbose:
-            print('\n')
-            print('Path to zeropoint image:')
-            print(zpt_imgpath)
-            print('\n')
+            logger.debug(f'Path to zeropoint image: \n {zpt_imgpath}')
 
         decorr_psf_savename = f'psf_{band}_{sci_pointing}_{sci_sca}_-_{t_pointing}_{t_sca}.fits'
         decorr_psfpath = decorr_img(sci_psf_path,dcker_path,savename=decorr_psf_savename)
         if verbose:
-            print('\n')
-            print('Path to decorrelated PSF (use for photometry):')
-            print(decorr_psfpath)
-            print('\n')
+            logger.debug(f'Path to decorrelated PSF (use for photometry): \n {decorr_psfpath}')
 
         skysub_stamp_savepath = '/work/lna18/imsub_out/skysub/stamps/'
-        skysub_stamp_path = stampmaker(ra,dec,sci_skysub_path,savepath=skysub_stamp_savepath,shape=np.array([100,100]))
+        skysub_stamp_path = stampmaker(ra,dec,sci_skysub_path,savedir=skysub_stamp_savepath,shape=np.array([100,100]))
         if verbose:
-            print('\n')
-            print('Path to sky-subtracted-only SN stamp:')
-            print(skysub_stamp_path)
-            print('\n')
+            logger.debug(f'Path to sky-subtracted-only SN stamp: \n {skysub_stamp_path}')
 
         dd_stamp_savepath = '/work/lna18/imsub_out/decorr/stamps/'
-        dd_stamp_path = stampmaker(ra,dec,decorr_imgpath,savepath=dd_stamp_savepath,shape=np.array([100,100]))
+        dd_stamp_path = stampmaker(ra,dec,decorr_imgpath,savedir=dd_stamp_savepath,shape=np.array([100,100]))
         if verbose:
-            print('\n')
-            print('Path to final decorrelated differenced SN stamp:')
-            print(dd_stamp_path)
-            print('\n')
+            print(f'Path to final decorrelated differenced SN stamp: \n {dd_stamp_path}')
 
         return sci_skysub_path, decorr_imgpath
 
@@ -303,11 +298,22 @@ def run(oid,band,n_templates=1,verbose=False):
 
     # Now can do SFFT. 
     pairs = list(itertools.product(template_list,science_list))
+    # pairslist = list((list(tup) for tup in pairs))
     # skysub_dir = '/work/lna18/imsub_out/skysub'
     # NOTE: I have fixed skysub_dir in sfft() because functools.partial()
     # was not behaving with two keyword arguments at the end. Need to sort
     # this out another time. But for now, it runs. 
     partial_sfft = partial(sfft,ra,dec,band,verbose=verbose)
+
+    # pairs_bag = db.from_sequence(list(pairs), npartitions=cpus_per_task)
+    # sfftrun = pairs_bag.map(partial_sfft,pairs_bag).compute()
+
+    # with SharedMemoryManager() as smm:
+    #     sharedlist = smm.ShareableList(pairslist)
+    #     with Pool(cpus_per_task) as pool_2:
+    #         process_2 = pool_2.map(partial_sfft,sharedlist)
+    #         pool_2.close()
+    #         pool_2.join()
 
     with Manager() as mgr: 
         mgr_pairs = mgr.list(pairs)
