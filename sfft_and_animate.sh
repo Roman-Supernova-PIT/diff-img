@@ -2,13 +2,13 @@
 
 #SBATCH --job-name=sfft
 #SBATCH --mem=264G
-##SBATCH --partition=cosmology
+#SBATCH --partition=cosmology
 ##SBATCH -w dcc-cosmology-07
 #SBATCH --output=/hpc/group/cosmology/lna18/rsim_photometry/dcc_output/sfft/sfft-%J.out
 #SBATCH --mail-user=lauren.aldoroty@duke.edu
 #SBATCH --mail-type=ALL
 #SBATCH --cpus-per-task 5
-#SBATCH --array=1
+#SBATCH --array=3
 
 # Need these lines if using GPU: 
 ##SBATCH -p gpu-common
@@ -18,6 +18,11 @@
 # Activate conda environment
 source ~/.bashrc
 conda activate repeatability
+
+# Make numpy stop thread hogging
+export OPENBLAS_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
 
 # Run program. 
 sne=( '20172782' )
