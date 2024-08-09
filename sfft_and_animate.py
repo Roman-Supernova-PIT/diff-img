@@ -1,5 +1,5 @@
 # IMPORTS Standard:
-from multiprocessing import Pool
+from multiprocessing import Pool, Manager
 from functools import partial
 import itertools
 import argparse
@@ -301,10 +301,12 @@ def run(oid,band,n_templates=1,verbose=False):
     # this out another time. But for now, it runs. 
     partial_sfft = partial(sfft,ra,dec,band,verbose=verbose)
 
-    with Pool(cpus_per_task) as pool_2:
-        process_2 = pool_2.map(partial_sfft,pairs)
-        pool_2.close()
-        pool_2.join()
+    with Manager() as mgr: 
+        mgr_pairs = mgr.list(pairs)
+        with Pool(cpus_per_task) as pool_2:
+            process_2 = pool_2.map(partial_sfft,mgr_pairs)
+            pool_2.close()
+            pool_2.join()
 
     if verbose:
         print('SFFT complete.')
