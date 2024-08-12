@@ -147,6 +147,8 @@ def sfft(ra,dec,band,pair_info,
         logger.setLevel(logging.DEBUG) # ERROR, WARNING, INFO, or DEBUG (in that order by increasing detail)
 
     logger.debug('~~~~~~~~~~~~~~~~STARTING SFFT!~~~~~~~~~~~~~~~~')
+
+    tracemalloc.start()
     t_info, sci_info = pair_info
     sci_pointing, sci_sca = sci_info['pointing'], sci_info['sca']
     t_pointing, t_sca = t_info['pointing'], t_info['sca']
@@ -164,6 +166,10 @@ def sfft(ra,dec,band,pair_info,
 
     template_overlap = check_overlap(ra,dec,t_align,verbose=verbose)
     science_overlap = check_overlap(ra,dec,sci_skysub_path,verbose=verbose)
+    
+    s1, p1 = tracemalloc.get_traced_memory()
+    logger.debug(f'MEMORY AFTER SKYSUB AND ALIGN mem size = {s1}, mem peak = {p1}')
+    tracemalloc.reset_peak()
 
     if not template_overlap or not science_overlap:
         if verbose:
@@ -183,21 +189,37 @@ def sfft(ra,dec,band,pair_info,
         if verbose:
             logger.debug(f'Path to template PSF: \n {t_psf_path}')
 
+        s2, p2 = tracemalloc.get_traced_memory()
+        logger.debug(f'MEMORY AFTER PSF STUFF mem size = {s2}, mem peak = {p2}')
+        tracemalloc.reset_peak()
+
         sci_conv_name = f'conv_sci_Roman_TDS_simple_model_{band}_{t_pointing}_{t_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits'
         ref_conv_name = f'conv_ref_Roman_TDS_simple_model_{band}_{t_pointing}_{t_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits'
         sci_conv, temp_conv = crossconvolve(sci_skysub_path,sci_psf_path,t_align,t_imsim_psf,sci_outname=sci_conv_name,ref_outname=ref_conv_name,force=True)
         if verbose:
             logger.debug(f'Path to cross-convolved science image: \n {sci_conv} \n Path to cross-convolved template image: \n {temp_conv}')
 
+        s3, p3 = tracemalloc.get_traced_memory()
+        logger.debug(f'MEMORY AFTER CONVOLUTION mem size = {s3}, mem peak = {p3}')
+        tracemalloc.reset_peak()
+
         diff_savename = f'{band}_{sci_pointing}_{sci_sca}_-_{t_pointing}_{t_sca}.fits' # 'diff_' gets appended to the beginning of this
-        diff, soln = difference(sci_conv,temp_conv,sci_psf_path,t_psf_path,savename=diff_savename,backend='Numpy',force=True)
+        diff, soln = difference(sci_conv,temp_conv,sci_psf_path,t_psf_path,savename=diff_savename,backend='Numpy',nCPUthreads=1,force=True,logger=logger)
         if verbose:
             logger.debug(f'Path to differenced image: \n {diff}')
+
+        s4, p4 = tracemalloc.get_traced_memory()
+        logger.debug(f'MEMORY AFTER DIFFERENCING mem size = {s4}, mem peak = {p4}')
+        tracemalloc.reset_peak()
         
         dcker_savename = f'dcker_{band}_{sci_pointing}_{sci_sca}_-_{t_pointing}_{t_sca}.fits'
         dcker_path = decorr_kernel(sci_skysub_path,t_skysub,sci_psf_path,t_psf_path,diff,soln,savename=dcker_savename)
         if verbose:
             logger.debug(f'Path to decorrelation kernel: \n {dcker_path}')
+
+        s5, p5 = tracemalloc.get_traced_memory()
+        logger.debug(f'MEMORY AFTER GENERATING DCKER mem size = {s5}, mem peak = {p5}')
+        tracemalloc.reset_peak()
         
         decorr_imgpath = decorr_img(diff,dcker_path)
         if verbose:
@@ -213,6 +235,10 @@ def sfft(ra,dec,band,pair_info,
         if verbose:
             logger.debug(f'Path to decorrelated PSF (use for photometry): \n {decorr_psfpath}')
 
+        s6, p6 = tracemalloc.get_traced_memory()
+        logger.debug(f'MEMORY AFTER DECORRELATING THE IMAGES mem size = {s6}, mem peak = {p6}')
+        tracemalloc.reset_peak()        
+
         skysub_stamp_savepath = '/work/lna18/imsub_out/skysub/stamps/'
         skysub_stamp_path = stampmaker(ra,dec,sci_skysub_path,savedir=skysub_stamp_savepath,shape=np.array([100,100]))
         if verbose:
@@ -222,6 +248,11 @@ def sfft(ra,dec,band,pair_info,
         dd_stamp_path = stampmaker(ra,dec,decorr_imgpath,savedir=dd_stamp_savepath,shape=np.array([100,100]))
         if verbose:
             print(f'Path to final decorrelated differenced SN stamp: \n {dd_stamp_path}')
+
+        s7, p7 = tracemalloc.get_traced_memory()
+        logger.debug(f'MEMORY AFTER MAKING STAMPS mem size = {s7}, mem peak = {p7}')
+        tracemalloc.reset_peak()        
+
 
         return sci_skysub_path, decorr_imgpath
 
