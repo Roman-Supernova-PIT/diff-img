@@ -1,20 +1,18 @@
 #!/bin/bash
 
+#SBATCH -A m4385
+#SBATCH -C gpu
+#SBATCH -q debug
 #SBATCH --job-name=sfft
-#SBATCH --mem=264G
-#SBATCH --qos=debug
-#SBATCH --constraint=gpu
+#SBATCH --mem=64G
 #SBATCH --ntasks=1
+#SBATCH --ntasks-per-node=1
 #SBATCH --output=/global/cfs/cdirs/m4385/users/lauren/out_logs/sfft/sfft-%J.out
 #SBATCH --mail-user=lauren.aldoroty@duke.edu
 #SBATCH --mail-type=ALL
+#SBATCH --gpus-per-task 1
 #SBATCH --cpus-per-task 1
 #SBATCH --array=3
-
-# Need these lines if using GPU: 
-##SBATCH -p gpu-common
-##SBATCH --gres=gpu:1
-##SBATCH --exclusive
 
 # Activate conda environment
 source ~/.bashrc
