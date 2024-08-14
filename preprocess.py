@@ -1,7 +1,7 @@
 # IMPORTS Standard:
-# import logging
-import tracemalloc
-from multiprocessing import Pool, Manager
+import logging
+# import tracemalloc
+from multiprocessing import Pool, Manager, current_process
 from functools import partial
 import itertools
 import argparse
@@ -19,10 +19,7 @@ os.environ['NUMEXPR_NUM_THREADS'] = '1'
 os.environ['OMP_NUM_THREADS'] = '1'
 os.environ['VECLIB_MAXIMUM_THREADS'] = '1'
 
-import numpy as np
-
 # IMPORTS Astro:
-from astropy.table import Table
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy.nddata import Cutout2D
@@ -34,7 +31,7 @@ import astropy.units as u
 
 # IMPORTS Internal:
 from phrosty.imagesubtraction import sky_subtract, imalign, get_imsim_psf, rotate_psf, crossconvolve
-from phrosty.utils import get_transient_info, transient_in_or_out, _build_filepath
+from phrosty.utils import get_transient_info, transient_in_or_out
 
 ###########################################################################
 # Get environment variables. 
@@ -50,16 +47,16 @@ assert infodir is not None, 'You need to set DIA_INFO_DIR as an environment vari
 
 ###########################################################################
 
-# Configure logger (Rob)
-logger = logging.getLogger(f'preprocess_{proc}')
-if not logger.hasHandlers():
-    log_out = logging.StreamHandler(sys.stderr)
-    formatter = logging.Formatter(f'[%(asctime)s - {proc} - %(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
-    log_out.setFormatter(formatter)
-    logger.addHandler(log_out)
-    logger.setLevel(logging.DEBUG) # ERROR, WARNING, INFO, or DEBUG (in that order by increasing detail)
-
-###########################################################################
+def set_logger(proc,name):
+    # Configure logger (Rob)
+    logger = logging.getLogger(f'{name}_{proc}')
+    if not logger.hasHandlers():
+        log_out = logging.StreamHandler(sys.stderr)
+        formatter = logging.Formatter(f'[%(asctime)s - {proc} - %(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+        log_out.setFormatter(formatter)
+        logger.addHandler(log_out)
+        logger.setLevel(logging.DEBUG) # ERROR, WARNING, INFO, or DEBUG (in that order by increasing detail)
+    return logger
 
 def get_templates(oid,band,n_templates=1,verbose=False):
     ra,dec,start,end = get_transient_info(oid)
@@ -127,9 +124,33 @@ def check_overlap(ra,dec,imgpath,data_ext=0,overlap_size=500,verbose=False,show_
             print(f'{imgpath} does not sufficiently overlap with the SN. ')
         return False
 
+def skysub(infodict):
+    """
+    Wrapper for phrosty.imagesubtraction.sky_subtract() that allows input of
+    a single dictionary for filter, pointing, and sca instead of individual
+    values for each argument. Use this to enable use of multiprocessing.Pool.map.
+    """
+    band, pointing, sca = infodict['filter'], infodict['pointing'], infodict['sca']
+    sky_subtract(band=band,pointing=pointing,sca=sca)
+
 def preprocess(ra,dec,band,pair_info,
                skysub_dir=os.path.join(dia_out_dir,'skysub'),
-               verbose=False,logger=logger):
+               verbose=False):
+
+    ###########################################################################
+
+    # Get process name. 
+    me = current_process()
+    match = re.search( '([0-9]+)', me.name)
+    if match is not None:
+        proc = match.group(1)
+    else:
+        proc = str(me.pid)
+
+    # Set logger.
+    logger = set_logger(proc,'preprocess')
+
+    ###########################################################################
 
     t_info, sci_info = pair_info
     sci_pointing, sci_sca = sci_info['pointing'], sci_info['sca']
@@ -168,7 +189,22 @@ def preprocess(ra,dec,band,pair_info,
         if verbose:
             logger.debug(f'Path to cross-convolved science image: \n {sci_conv} \n Path to cross-convolved template image: \n {temp_conv}')
 
-def run(oid,band,n_templates=1,verbose=False)
+def run(oid,band,n_templates=1,verbose=False):
+
+    ###########################################################################
+
+    # Get process name. 
+    me = current_process()
+    match = re.search( '([0-9]+)', me.name)
+    if match is not None:
+        proc = match.group(1)
+    else:
+        proc = str(me.pid)
+
+    # Set logger.
+    logger = set_logger(proc,'preprocess')
+
+    ###########################################################################
 
     if verbose:
         start_time = time.time()
