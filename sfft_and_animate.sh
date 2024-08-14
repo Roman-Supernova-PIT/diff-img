@@ -1,14 +1,14 @@
 #!/bin/bash
 
 #SBATCH --job-name=sfft
-#SBATCH --mem=264G
+#SBATCH --mem=264G # For serial jobs
 #SBATCH --partition=cosmology
-##SBATCH -w dcc-cosmology-07
+#SBATCH -w dcc-cosmology-05
 #SBATCH --output=/hpc/group/cosmology/lna18/rsim_photometry/dcc_output/sfft/sfft-%J.out
 #SBATCH --mail-user=lauren.aldoroty@duke.edu
 #SBATCH --mail-type=ALL
-#SBATCH --cpus-per-task 5
-#SBATCH --array=3
+#SBATCH --cpus-per-task 1
+#SBATCH --array=1
 
 # Need these lines if using GPU: 
 ##SBATCH -p gpu-common
@@ -23,6 +23,8 @@ conda activate repeatability
 export OPENBLAS_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 export NUMEXPR_NUM_THREADS=1
+export OMP_NUM_THREADS=1
+export VECLIB_MAXIMUM_THREADS=1
 
 # Run program. 
 sne=( '20172782' )
