@@ -40,11 +40,12 @@ do
     # Step 1: Get all images the object is in.
     python -u get_object_instances.py "$sn"
     # Step 2: Sky subtract, align images to be in DIA. 
-    srun python -u preprocess.py "$sn" --n-templates 1 --verbose True --slurm_array
     # WAIT FOR COMPLETION. 
     # Step 3: Get, align, save PSFs; cross-convolve. 
+    srun python -u preprocess.py "$sn" --n-templates 1 --verbose True --slurm_array
     # WAIT FOR COMPLETION.
     # Step 4: Differencing (GPU). 
+    srun python -u sfftdiff.py "$sn" --n-templates 1 --verbose True --slurm_array
     # WAIT FOR COMPLETION.
     # Step 5: Generate decorrelation kernel, apply to diff. image and science image, make stamps. 
     srun python -u sfft_and_animate.py "$sn" --n-templates 1 --verbose True --slurm_array
