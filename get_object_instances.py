@@ -1,6 +1,5 @@
 import os
 import argparse
-import numpy as np
 from phrosty.utils import get_object_instances, get_transient_radec
 
 infodir = os.getenv('SN_INFO_DIR', None)
@@ -10,7 +9,7 @@ def make_object_table(oid):
     ra,dec = get_transient_radec(oid)
     objs = get_object_instances(ra=ra, dec=dec)
     savedir = os.path.join(infodir,oid)
-    savepath = os.path.join(savepath,f'{oid}_instances.csv')
+    savepath = os.path.join(savedir,f'{oid}_instances.csv')
     if not os.path.exists(savepath):
         objs.write(savepath, format='csv', overwrite=True)
     else:
