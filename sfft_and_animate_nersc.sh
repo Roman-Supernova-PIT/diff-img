@@ -22,6 +22,13 @@ conda activate diff
 export OPENBLAS_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 export NUMEXPR_NUM_THREADS=1
+export OMP_NUM_THREADS=1
+export VECLIB_MAXIMUM_THREADS=1
+
+# Set environment variables
+export SN_INFO_DIR="/pscratch/sd/l/laldorot/object_tables" # Location of object/image tables.
+export SIMS_DIR="/global/cfs/cdirs/lsst/production/roman-desc-sims/Roman_data" # Location of the Roman-DESC sims.
+export DIA_OUT_DIR="/pscratch/sd/l/laldorot/dia_out" # Parent output folder for DIA pipeline.
 
 # Run program. 
 sne=( '20172782' )
@@ -30,5 +37,15 @@ sne=( '20172782' )
 for sn in "${sne[@]}"
 do
     echo "$sn"
+    # Step 1: Get all images the object is in.
+    python -u get_object_instances.py "$sn"
+    # Step 2: Sky subtract, align images to be in DIA. 
+    srun python -u preprocess.py "$sn" --n-templates 1 --verbose True --slurm_array
+    # WAIT FOR COMPLETION. 
+    # Step 3: Get, align, save PSFs; cross-convolve. 
+    # WAIT FOR COMPLETION.
+    # Step 4: Differencing (GPU). 
+    # WAIT FOR COMPLETION.
+    # Step 5: Generate decorrelation kernel, apply to diff. image and science image, make stamps. 
     srun python -u sfft_and_animate.py "$sn" --n-templates 1 --verbose True --slurm_array
 done
