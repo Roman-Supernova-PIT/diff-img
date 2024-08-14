@@ -304,7 +304,7 @@ def parse_and_run():
         sys.exit()
 
     run(args.oid, args.band, args.n_templates, args.verbose)
-    print("FINISHED!")
+    print("Finished with preprocess.py!")
 
 if __name__ == '__main__':
     parse_and_run()
