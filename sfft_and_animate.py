@@ -41,6 +41,18 @@ from phrosty.plotting import animate_stamps
 from phrosty.utils import get_transient_radec, get_transient_mjd, get_mjd_info, _build_filepath
 
 ###########################################################################
+# Get environment variables. 
+
+infodir = os.getenv('SN_INFO_DIR', None)
+assert infodir is not None, 'You need to set SN_INFO_DIR as an environment variable.'
+
+sims_dir = os.getenv('SIMS_DIR', None)
+assert sims_dir is not None, 'You need to set SIMS_DIR as an environment variable.'
+
+dia_out_dir = os.getenv('DIA_OUT_DIR', None)
+assert infodir is not None, 'You need to set DIA_INFO_DIR as an environment variable.'
+
+###########################################################################
 
 def get_sn_info(oid):
     """
@@ -51,7 +63,7 @@ def get_sn_info(oid):
 
     return RA, DEC, start, end
 
-def sn_in_or_out(oid,start,end,band,infodir='/hpc/group/cosmology/lna18/'):
+def sn_in_or_out(oid,start,end,band,infodir=infodir):
     """
     Retrieve pointings that contain and do not contain the specified SN,
     per the truth files by MJD. 
@@ -59,7 +71,7 @@ def sn_in_or_out(oid,start,end,band,infodir='/hpc/group/cosmology/lna18/'):
     Returns a tuple of astropy tables (images with the SN, images without the SN).
     """
     transient_info_file = os.path.join(
-        infodir, f'roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_instances_nomjd.csv'
+        infodir, f'/{oid}/{oid}_instances.csv'
     )
 
     tab = Table.read(transient_info_file)

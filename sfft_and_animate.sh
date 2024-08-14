@@ -17,7 +17,7 @@
 
 # Activate conda environment
 source ~/.bashrc
-conda activate repeatability
+conda activate diff
 
 # Make numpy stop thread hogging
 export OPENBLAS_NUM_THREADS=1
