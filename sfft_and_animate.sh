@@ -26,6 +26,11 @@ export NUMEXPR_NUM_THREADS=1
 export OMP_NUM_THREADS=1
 export VECLIB_MAXIMUM_THREADS=1
 
+# Set environment variables
+export SN_INFO_DIR="/hpc/group/cosmology/lna18/roman_sim_imgs/Roman_Rubin_Sims_2024" # Location of object/image tables.
+export SIMS_DIR="/cwork/mat90/RomanDESC_sims_2024" # Location of the Roman-DESC sims.
+export DIA_OUT_DIR="/work/lna18/imsub_out" # Parent output folder for DIA pipeline.
+
 # Run program. 
 sne=( '20172782' )
 # sne=( '20172117' '20172782' '20173305' '20174023' '20174118' '20174370' '20175077' '20177380' '20172328' '20173301' '20173373' '20174108' '20174213' '20174542' '20175568' '20202893' )
@@ -33,5 +38,6 @@ sne=( '20172782' )
 for sn in "${sne[@]}"
 do
     echo "$sn"
-    srun python -u sfft_and_animate.py "$sn" --n-templates 5 --verbose True --slurm_array
+    python -u get_object_instances.py "$sn"
+    # srun python -u sfft_and_animate.py "$sn" --n-templates 1 --verbose True --slurm_array
 done
