@@ -9,6 +9,8 @@ def make_object_table(oid):
     ra,dec = get_transient_radec(oid)
     objs = get_object_instances(ra=ra, dec=dec)
     savedir = os.path.join(infodir,oid)
+    if not os.path.exists(savedir):
+        os.mkdir(savedir)
     savepath = os.path.join(savedir,f'{oid}_instances.csv')
     if not os.path.exists(savepath):
         objs.write(savepath, format='csv', overwrite=True)
