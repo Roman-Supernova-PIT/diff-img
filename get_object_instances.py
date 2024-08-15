@@ -10,7 +10,6 @@ def make_object_table(oid):
     objs = get_object_instances(ra=ra, dec=dec)
     oid = str(oid)
     savedir = os.path.join(infodir,oid)
-    print('The save directory should be', savedir)
     if not os.path.exists(savedir):
         os.mkdir(savedir)
     savepath = os.path.join(savedir,f'{oid}_instances.csv')
