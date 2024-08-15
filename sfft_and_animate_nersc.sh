@@ -27,7 +27,7 @@ export VECLIB_MAXIMUM_THREADS=1
 
 # Set environment variables
 export SN_INFO_DIR="/pscratch/sd/l/laldorot/object_tables" # Location of object/image tables.
-export SIMS_DIR="/global/cfs/cdirs/lsst/production/roman-desc-sims/Roman_data" # Location of the Roman-DESC sims.
+export SIMS_DIR="/global/cfs/cdirs/lsst/shared/external/roman-desc-sims/Roman_data" # Location of the Roman-DESC sims.
 export DIA_OUT_DIR="/pscratch/sd/l/laldorot/dia_out" # Parent output folder for DIA pipeline.
 
 # Run program. 
@@ -48,5 +48,5 @@ do
     srun python -u sfftdiff.py "$sn" --n-templates 1 --verbose True --slurm_array
     # WAIT FOR COMPLETION.
     # Step 5: Generate decorrelation kernel, apply to diff. image and science image, make stamps. 
-    srun python -u sfft_and_animate.py "$sn" --n-templates 1 --verbose True --slurm_array
+    # srun python -u sfft_and_animate.py "$sn" --n-templates 1 --verbose True --slurm_array
 done
