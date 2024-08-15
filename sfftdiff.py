@@ -141,7 +141,10 @@ def run(oid,band,n_templates=1,verbose=False):
         template_pointing, template_sca = template_info['pointing'], template_info['sca']
         sci_pointing, sci_sca = sci_info['pointing'], sci_info['sca']
 
-        sfft(band,sci_pointing,sci_sca,template_pointing,template_sca,verbose=verbose)
+        sfft(oid,band,
+             sci_pointing,sci_sca,
+             template_pointing,template_sca,
+             verbose=verbose,logger=logger)
 
     if verbose:
         logger.debug(f'Difference imaging complete. \n Run time: {time.time()-start_time}')
