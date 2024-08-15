@@ -75,7 +75,9 @@ def get_templates(oid,band,n_templates=1,verbose=False):
 
 def get_science(oid,band,verbose=False):
     ra,dec,start,end = get_transient_info(oid)
-    in_tab,out_tab = transient_in_or_out(oid,start,end,band)
+
+    filepath = os.path.join(infodir,f'{oid}/{oid}_instances.csv')
+    in_tab,out_tab = transient_in_or_out(oid,start,end,band,transient_info_filepath=filepath)
 
     if verbose:
         print('The science images are:')
