@@ -12,6 +12,7 @@
 #SBATCH --mail-type=ALL
 #SBATCH --gpus-per-task 1
 #SBATCH --cpus-per-task 1
+#SBATCH --time=30:00
 #SBATCH --array=3
 
 # Activate conda environment
@@ -28,6 +29,7 @@ export VECLIB_MAXIMUM_THREADS=1
 # Set environment variables
 export SN_INFO_DIR="/pscratch/sd/l/laldorot/object_tables" # Location of object/image tables.
 export SIMS_DIR="/global/cfs/cdirs/lsst/shared/external/roman-desc-sims/Roman_data" # Location of the Roman-DESC sims.
+export SNANA_PQ_DIR="/global/cfs/cdirs/lsst/www/DESC_TD_PUBLIC/Roman+DESC/PQ+HDF5_ROMAN+LSST_LARGE" # Location of the SNANA parquet files. 
 export DIA_OUT_DIR="/pscratch/sd/l/laldorot/dia_out" # Parent output folder for DIA pipeline.
 
 # Run program. 
