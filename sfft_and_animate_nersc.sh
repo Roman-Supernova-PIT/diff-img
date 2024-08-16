@@ -31,6 +31,7 @@ export SN_INFO_DIR="/pscratch/sd/l/laldorot/object_tables" # Location of object/
 export SIMS_DIR="/global/cfs/cdirs/lsst/shared/external/roman-desc-sims/Roman_data" # Location of the Roman-DESC sims.
 export SNANA_PQ_DIR="/global/cfs/cdirs/lsst/www/DESC_TD_PUBLIC/Roman+DESC/PQ+HDF5_ROMAN+LSST_LARGE" # Location of the SNANA parquet files. 
 export DIA_OUT_DIR="/pscratch/sd/l/laldorot/dia_out" # Parent output folder for DIA pipeline.
+export NVCC="/opt/nvidia/hpc_sdk/Linux_x86_64/23.9/cuda/12.2/bin/nvcc" # `whereis nvcc` path
 
 # Run program. 
 sne=( '20172782' )
@@ -40,11 +41,11 @@ for sn in "${sne[@]}"
 do
     echo "$sn"
     # Step 1: Get all images the object is in.
-    python -u get_object_instances.py "$sn"
+    # python -u get_object_instances.py "$sn"
     # Step 2: Sky subtract, align images to be in DIA. 
     # WAIT FOR COMPLETION. 
     # Step 3: Get, align, save PSFs; cross-convolve. 
-    srun python -u preprocess.py "$sn" --n-templates 1 --verbose True --slurm_array
+    # srun python -u preprocess.py "$sn" --n-templates 1 --verbose True --slurm_array
     # WAIT FOR COMPLETION.
     # Step 4: Differencing (GPU). 
     srun python -u sfftdiff.py "$sn" --n-templates 1 --verbose True --slurm_array
