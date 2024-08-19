@@ -29,7 +29,8 @@ import astropy.units as u
 
 # IMPORTS Internal:
 from phrosty.imagesubtraction import difference
-from phrosty.utils import get_transient_radec, get_transient_info, transient_in_or_out
+from phrosty.utils import get_transient_radec, get_transient_info, transient_in_or_out, set_logger, get_templates, get_science
+
 ###########################################################################
 # Get environment variables. 
 
@@ -43,46 +44,6 @@ dia_out_dir = os.getenv('DIA_OUT_DIR', None)
 assert infodir is not None, 'You need to set DIA_INFO_DIR as an environment variable.'
 
 ###########################################################################
-
-def set_logger(proc,name):
-    # Configure logger (Rob)
-    logger = logging.getLogger(f'{name}_{proc}')
-    if not logger.hasHandlers():
-        log_out = logging.StreamHandler(sys.stderr)
-        formatter = logging.Formatter(f'[%(asctime)s - {proc} - %(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
-        log_out.setFormatter(formatter)
-        logger.addHandler(log_out)
-        logger.setLevel(logging.DEBUG) # ERROR, WARNING, INFO, or DEBUG (in that order by increasing detail)
-    return logger
-
-def get_templates(oid,band,n_templates=1,verbose=False):
-    ra,dec,start,end = get_transient_info(oid)
-
-    filepath = os.path.join(infodir,f'{oid}/{oid}_instances.csv')
-    in_tab,out_tab = transient_in_or_out(oid,start,end,band,transient_info_filepath=filepath)
-
-    template_tab = out_tab[:n_templates]
-    if verbose:
-        print('The template images are:')
-        print(template_tab)
-
-    template_list = [dict(zip(template_tab.colnames,row)) for row in template_tab]
-
-    return template_list
-
-def get_science(oid,band,verbose=False):
-    ra,dec,start,end = get_transient_info(oid)
-
-    filepath = os.path.join(infodir,f'{oid}/{oid}_instances.csv')
-    in_tab,out_tab = transient_in_or_out(oid,start,end,band,transient_info_filepath=filepath)
-
-    if verbose:
-        print('The science images are:')
-        print(in_tab)
-        
-    science_list = [dict(zip(in_tab.colnames,row)) for row in in_tab]
-    
-    return science_list
 
 def sfft(oid,band,
          sci_pointing,sci_sca,
@@ -108,7 +69,7 @@ def sfft(oid,band,
     template_psf_path = os.path.join(dia_out_dir,f'psf/rot_psf_{band}_{template_pointing}_{template_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits')
 
 
-    diff_savename = f'{band}_{sci_pointing}_{sci_sca}_-_{template_pointing}_{template_sca}.fits' # 'diff_' gets prepended to the beginning of this
+    diff_savename = f'{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits' # 'diff_' gets prepended to the beginning of this
     diff, soln = difference(sci_conv,template_conv,
                             sci_psf_path,template_psf_path,
                             savename=diff_savename,
