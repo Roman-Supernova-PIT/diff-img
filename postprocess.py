@@ -1,6 +1,5 @@
 # IMPORTS Standard:
 import logging
-import tracemalloc
 from multiprocessing import Pool, Manager, current_process
 from functools import partial
 import itertools
@@ -8,8 +7,6 @@ import argparse
 import os
 import sys
 import re
-import matplotlib.pyplot as plt
-from mpl_toolkits.axes_grid1 import make_axes_locatable
 import time
 
 # Make numpy stop thread hogging. 
@@ -25,12 +22,7 @@ import numpy as np
 # IMPORTS Astro:
 from astropy.table import Table
 from astropy.coordinates import SkyCoord
-from astropy.visualization import ZScaleInterval
 from astropy.io import fits
-from astropy.nddata import Cutout2D
-from astropy.wcs import WCS
-from astropy.wcs.utils import skycoord_to_pixel
-import astropy.units as u
 
 # IMPORTS Internal:
 from phrosty.imagesubtraction import decorr_kernel, decorr_img, stampmaker
@@ -72,7 +64,6 @@ def postprocess(ra,dec,band,pair_info,
     sci_pointing, sci_sca = sci_info['pointing'], sci_info['sca']
     template_pointing, template_sca = template_info['pointing'], template_info['sca']
 
-
     # Set up input filepaths for generating the decorrelation kernel.
     skysub_dir = os.path.join(dia_out_dir,'skysub')
     sci_skysub_path = os.path.join(skysub_dir,f'skysub_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}.fits')
@@ -98,10 +89,6 @@ def postprocess(ra,dec,band,pair_info,
     if verbose:
         logger.debug(f'Path to decorrelation kernel: \n {dcker_path}')
 
-    s5, p5 = tracemalloc.get_traced_memory()
-    logger.debug(f'MEMORY AFTER GENERATING DCKER mem size = {s5}, mem peak = {p5}')
-    tracemalloc.reset_peak()
-
     # Apply decorrelation kernel to images    
     decorr_imgpath = decorr_img(diffpath,dcker_path)
     if verbose:
@@ -119,10 +106,6 @@ def postprocess(ra,dec,band,pair_info,
     if verbose:
         logger.debug(f'Path to decorrelated PSF (use for photometry): \n {decorr_psfpath}')
 
-    s6, p6 = tracemalloc.get_traced_memory()
-    logger.debug(f'MEMORY AFTER DECORRELATING THE IMAGES mem size = {s6}, mem peak = {p6}')
-    tracemalloc.reset_peak()        
-
     # Make stamps
     skysub_stamp_savename = f'stamp_{ra}_{dec}_skysub_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}.fits'
     skysub_stamp_path = stampmaker(ra,dec,sci_skysub_path,savename=skysub_stamp_savename,shape=np.array([100,100]))
@@ -132,13 +115,16 @@ def postprocess(ra,dec,band,pair_info,
     dd_stamp_savename = f'stamp_{ra}_{dec}_diff_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}.fits'
     dd_stamp_path = stampmaker(ra,dec,decorr_imgpath,savename=dd_stamp_savename,shape=np.array([100,100]))
     if verbose:
-        print(f'Path to final decorrelated differenced SN stamp: \n {dd_stamp_path}')
-
-    s7, p7 = tracemalloc.get_traced_memory()
-    logger.debug(f'MEMORY AFTER MAKING STAMPS mem size = {s7}, mem peak = {p7}')
-    tracemalloc.reset_peak()        
+        logger.debug(f'Path to final decorrelated differenced SN stamp: \n {dd_stamp_path}')   
 
 def run(oid,band,n_templates=1,verbose=False):
+
+    ###########################################################################
+
+    # Start tracemalloc. 
+    tracemalloc.start()
+
+    ###########################################################################
 
     if verbose:
         start_time = time.time()
@@ -159,8 +145,15 @@ def run(oid,band,n_templates=1,verbose=False):
             pool.join()
 
     if verbose:
-        logger.debug('\n ******************************************************** \n Decorrelation kernel generated, applied to images and PSFs, and stamps generated. \n  ******************************************************** \n')
-        logger.debug(f'Run time: {time.time()-start_time}')
+        print('\n ******************************************************** \n Decorrelation kernel generated, applied to images and PSFs, and stamps generated. \n  ******************************************************** \n')
+        print(f'RUNTIMEPRINT postprocess.py: {time.time()-start_time}')
+        
+    ###################################################################
+    # Print tracemalloc.
+    current, peak = tracemalloc.get_traced_memory()
+    print(f'MEMPRINT postprocess.py: Current memory = {current}, peak memory = {peak}')
+
+    ###################################################################
 
 def parse_slurm():
     """

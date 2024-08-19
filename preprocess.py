@@ -97,7 +97,7 @@ def skysub(infodict):
 
 def preprocess(ra,dec,band,pair_info,
                skysub_dir=os.path.join(dia_out_dir,'skysub'),
-               verbose=False):
+               verbose=False,logger=None):
 
     ###########################################################################
 
@@ -153,6 +153,12 @@ def preprocess(ra,dec,band,pair_info,
 
 def run(oid,band,n_templates=1,verbose=False):
 
+    ###################################################################
+    # Start tracemalloc. 
+    tracemalloc.start()
+
+    ###################################################################
+
     if verbose:
         start_time = time.time()
 
@@ -170,7 +176,7 @@ def run(oid,band,n_templates=1,verbose=False):
         pool.join()
 
     if verbose:
-        logger.debug('\n ******************************************************** \n Images have been sky-subtracted. \n  ******************************************************** \n')
+        print('\n ******************************************************** \n Images have been sky-subtracted. \n  ******************************************************** \n')
 
     partial_preprocess = partial(preprocess,ra,dec,band,verbose=verbose)
 
@@ -182,8 +188,15 @@ def run(oid,band,n_templates=1,verbose=False):
             pool_2.join()
 
     if verbose:
-        logger.debug('\n ******************************************************** \n Templates aligned, PSFs retrieved and aligned, images cross-convolved. \n  ******************************************************** \n')
-        logger.debug(f'Run time: {time.time()-start_time}')
+        print('\n ******************************************************** \n Templates aligned, PSFs retrieved and aligned, images cross-convolved. \n  ******************************************************** \n')
+        print(f'RUNTIMEPRINT preprocess.py: {time.time()-start_time}')
+
+    ###################################################################
+    # Print tracemalloc.
+    current, peak = tracemalloc.get_traced_memory()
+    print(f'MEMPRINT preprocess.py: Current memory = {current}, peak memory = {peak}')
+
+    ###################################################################
 
 def parse_slurm():
     """

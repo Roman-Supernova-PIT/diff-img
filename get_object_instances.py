@@ -1,11 +1,22 @@
 import os
 import argparse
+import time
+import tracemalloc
 from phrosty.utils import get_object_instances, get_transient_radec
 
 infodir = os.getenv('SN_INFO_DIR', None)
 assert infodir is not None, 'You need to set SN_INFO_DIR as an environment variable.'
 
 def make_object_table(oid):
+
+    ###################################################################
+    # Start tracemalloc. 
+    tracemalloc.start()
+
+    ###################################################################
+    
+    start_time = time.time()
+
     ra,dec = get_transient_radec(oid)
     objs = get_object_instances(ra=ra, dec=dec)
     oid = str(oid)
@@ -17,6 +28,15 @@ def make_object_table(oid):
         objs.write(savepath, format='csv', overwrite=True)
     else:
         print(f'{savepath} exists. Skipping this step.')
+
+    print(f'RUNTIMEPRINT get_object_instances.py: {time.time()-start_time}')
+
+    ###################################################################
+    # Print tracemalloc.
+    current, peak = tracemalloc.get_traced_memory()
+    print(f'MEMPRINT get_object_instances.py: Current memory = {current}, peak memory = {peak}')
+
+    ###################################################################
 
 def parse_and_run():
     parser = argparse.ArgumentParser(

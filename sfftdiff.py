@@ -7,6 +7,7 @@ import os
 import sys
 import re
 import time
+import cupy as cp
 
 # Make numpy stop thread hogging. 
 # I don't think I need this if I have it in the batch file, right? 
@@ -78,6 +79,15 @@ def sfft(oid,band,
     if verbose:
         logger.debug(f'Path to differenced image: \n {diff}')
 
+    mempool = cp.get_default_memory_pool()
+    pinned_mempool = cp.get_default_pinned_memory_pool()
+
+    print(f'GPU MEMPRINT sfftdiff.sfft(): Memory pool used bytes = {mempool.used_bytes()}')
+    print('Now freeing blocks.')
+
+    mempool.free_all_blocks()
+    pinned_mempool.free_all_blocks()
+
 def run(oid,band,n_templates=1,verbose=False):
 
     ###########################################################################
@@ -86,6 +96,13 @@ def run(oid,band,n_templates=1,verbose=False):
     logger = set_logger('SERIAL','sfftdiff')
 
     ###########################################################################
+
+    # Start tracemalloc. 
+    tracemalloc.start()
+
+    ###########################################################################
+
+    mempool_all = cp.get_default_memory_pool()
 
     if verbose:
         start_time = time.time()
@@ -108,7 +125,15 @@ def run(oid,band,n_templates=1,verbose=False):
              verbose=verbose,logger=logger)
 
     if verbose:
-        logger.debug(f'Difference imaging complete. \n Run time: {time.time()-start_time}')
+        print(f'Difference imaging complete. \n RUNTIMEPRINT sfftdiff.py: {time.time()-start_time} \n GPU MEMPRINT sfftdiff.py {mempool_all.used_bytes()}')
+
+
+    ###################################################################
+    # Print tracemalloc.
+    current, peak = tracemalloc.get_traced_memory()
+    print(f'CPU MEMPRINT sfftdiff.py: Current memory = {current}, peak memory = {peak}')
+
+    ###################################################################
 
 def parse_slurm():
     """
