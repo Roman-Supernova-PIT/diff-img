@@ -157,8 +157,8 @@ def run(oid,band,n_templates=1,verbose=False):
         start_time = time.time()
 
     ra,dec,start,end = get_transient_info(oid)
-    template_list = get_templates(oid,band,n_templates,verbose=verbose)
-    science_list = get_science(oid,band,verbose=verbose)
+    template_list = get_templates(oid,band,infodir,n_templates,verbose=verbose)
+    science_list = get_science(oid,band,infodir,verbose=verbose)
     pairs = list(itertools.product(template_list,science_list))
 
     # First, unzip and sky subtract the images in their own multiprocessing pool.

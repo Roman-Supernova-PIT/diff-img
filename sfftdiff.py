@@ -60,7 +60,7 @@ def sfft(oid,band,
     sci_conv = os.path.join(dia_out_dir,f'convolved/conv_sci_Roman_TDS_simple_model_{band}_{template_pointing}_{template_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits')
 
     # Path to convolved template image:
-    template_conv = os.path.join(dia_out_dir,f'convolved/conv_sci_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
+    template_conv = os.path.join(dia_out_dir,f'convolved/conv_ref_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
 
     # Path to science PSF:
     sci_psf_path = os.path.join(dia_out_dir,f'psf/psf_{ra}_{dec}_{band}_{sci_pointing}_{sci_sca}.fits')
@@ -91,8 +91,8 @@ def run(oid,band,n_templates=1,verbose=False):
         start_time = time.time()
 
     ra,dec,start,end = get_transient_info(oid)
-    template_list = get_templates(oid,band,n_templates,verbose=verbose)
-    science_list = get_science(oid,band,verbose=verbose)
+    template_list = get_templates(oid,band,infodir,n_templates,verbose=verbose)
+    science_list = get_science(oid,band,infodir,verbose=verbose)
     pairs = list(itertools.product(template_list,science_list))
 
     for pair in pairs:

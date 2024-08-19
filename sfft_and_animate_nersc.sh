@@ -4,7 +4,7 @@
 #SBATCH -C gpu
 #SBATCH -q debug
 #SBATCH --job-name=sfft
-#SBATCH --mem=64G
+##SBATCH --mem=64G # Comment this out while on -q debug because you get a whole node, so you can monitor with top to see how much you're using. 
 #SBATCH --ntasks=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --output=/global/cfs/cdirs/m4385/users/lauren/out_logs/sfft/sfft-%J.out
@@ -48,8 +48,8 @@ do
     # srun python -u preprocess.py "$sn" --n-templates 1 --verbose True --slurm_array
     # WAIT FOR COMPLETION.
     # Step 4: Differencing (GPU). 
-    srun python -u sfftdiff.py "$sn" --n-templates 1 --verbose True --slurm_array
+    # srun python -u sfftdiff.py "$sn" --n-templates 1 --verbose True --slurm_array
     # WAIT FOR COMPLETION.
     # Step 5: Generate decorrelation kernel, apply to diff. image and science image, make stamps. 
-    # srun python -u sfft_and_animate.py "$sn" --n-templates 1 --verbose True --slurm_array
+    srun python -u postprocess.py "$sn" --n-templates 1 --verbose True --slurm_array
 done
