@@ -2,17 +2,17 @@
 
 #SBATCH -A m4385
 #SBATCH -C gpu
-#SBATCH -q debug
+#SBATCH -q regular # or debug
 #SBATCH --job-name=sfft
-##SBATCH --mem=64G # Comment this out while on -q debug because you get a whole node, so you can monitor with top to see how much you're using. 
-#SBATCH --ntasks=1
-#SBATCH --ntasks-per-node=1
+#SBATCH --mem=64G # Comment this out while on -q debug because you get a whole node, so you can monitor with top to see how much you're using. 
+#SBATCH --ntasks=1 # Leave as 1 because the tasks are divided in python. 
+#SBATCH --ntasks-per-node=1 # Same here. Leave as 1. 
 #SBATCH --output=/global/cfs/cdirs/m4385/users/lauren/out_logs/sfft/sfft-%J.out
 #SBATCH --mail-user=lauren.aldoroty@duke.edu
 #SBATCH --mail-type=ALL
 #SBATCH --gpus-per-task 1
-#SBATCH --cpus-per-task 1
-#SBATCH --time=30:00
+#SBATCH --cpus-per-task 1 
+#SBATCH --time=2:00:00
 #SBATCH --array=3
 
 # Activate conda environment
@@ -41,14 +41,14 @@ for sn in "${sne[@]}"
 do
     echo "$sn"
     # Step 1: Get all images the object is in.
-    # python -u get_object_instances.py "$sn"
+    python -u get_object_instances.py "$sn"
     # Step 2: Sky subtract, align images to be in DIA. 
     # WAIT FOR COMPLETION. 
     # Step 3: Get, align, save PSFs; cross-convolve. 
-    # srun python -u preprocess.py "$sn" --n-templates 1 --verbose True --slurm_array
+    srun python -u preprocess.py "$sn" --n-templates 1 --verbose True --slurm_array
     # WAIT FOR COMPLETION.
     # Step 4: Differencing (GPU). 
-    # srun python -u sfftdiff.py "$sn" --n-templates 1 --verbose True --slurm_array
+    srun python -u sfftdiff.py "$sn" --n-templates 1 --verbose True --slurm_array
     # WAIT FOR COMPLETION.
     # Step 5: Generate decorrelation kernel, apply to diff. image and science image, make stamps. 
     srun python -u postprocess.py "$sn" --n-templates 1 --verbose True --slurm_array

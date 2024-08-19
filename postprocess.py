@@ -1,5 +1,6 @@
 # IMPORTS Standard:
 import logging
+import tracemalloc
 from multiprocessing import Pool, Manager, current_process
 from functools import partial
 import itertools

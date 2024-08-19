@@ -58,10 +58,10 @@ def sfft(oid,band,
     ra, dec = get_transient_radec(oid)
 
     # Path to convolved science image:
-    sci_conv = os.path.join(dia_out_dir,f'convolved/conv_sci_Roman_TDS_simple_model_{band}_{template_pointing}_{template_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits')
+    sci_conv = os.path.join(dia_out_dir,f'convolved/conv_sci_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
 
     # Path to convolved template image:
-    template_conv = os.path.join(dia_out_dir,f'convolved/conv_ref_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
+    template_conv = os.path.join(dia_out_dir,f'convolved/conv_ref_Roman_TDS_simple_model_{band}_{template_pointing}_{template_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits')
 
     # Path to science PSF:
     sci_psf_path = os.path.join(dia_out_dir,f'psf/psf_{ra}_{dec}_{band}_{sci_pointing}_{sci_sca}.fits')
