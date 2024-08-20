@@ -2,7 +2,7 @@
 
 #SBATCH -A m4385
 #SBATCH -C gpu
-#SBATCH -q regular # or debug
+#SBATCH -q debug # regular or debug
 #SBATCH --job-name=sfft
 #SBATCH --mem=64G # Comment this out while on -q debug because you get a whole node, so you can monitor with top to see how much you're using. 
 #SBATCH --ntasks=1 # Leave as 1 because the tasks are divided in python. 
@@ -12,12 +12,14 @@
 #SBATCH --mail-type=ALL
 #SBATCH --gpus-per-task 1
 #SBATCH --cpus-per-task 1 
-#SBATCH --time=2:00:00
+##SBATCH --time=2:00:00 # regular QOS
+#SBATCH --time=30:00 # debug QOS
 #SBATCH --array=3
 
 # Activate conda environment
 source ~/.bashrc
 conda activate diff
+module load cudatoolkit/12.2 # Default, but just in case... be explicit. 
 
 # Make numpy stop thread hogging
 export OPENBLAS_NUM_THREADS=1
