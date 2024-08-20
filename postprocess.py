@@ -95,7 +95,7 @@ def postprocess(ra,dec,band,pair_info,
     if verbose:
         logger.debug(f'Path to final decorrelated differenced image: \n {decorr_imgpath}')
 
-    sci_conv = os.path.join(dia_out_dir,f'convolved/conv_sci_Roman_TDS_simple_model_{band}_{template_pointing}_{template_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits')
+    sci_conv = os.path.join(dia_out_dir,f'convolved/conv_sci_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
     zpt_savename = f'zptimg_{band}_{sci_pointing}_{sci_sca}_-_{template_pointing}_{template_sca}.fits'
     zpt_imgpath = decorr_img(sci_conv,dcker_path,savename=zpt_savename)
     if verbose:
