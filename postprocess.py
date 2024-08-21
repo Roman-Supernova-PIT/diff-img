@@ -113,7 +113,7 @@ def postprocess(ra,dec,band,pair_info,
     if verbose:
         logger.debug(f'Path to sky-subtracted-only SN stamp: \n {skysub_stamp_path}')
 
-    dd_stamp_savename = f'stamp_{ra}_{dec}_diff_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}.fits'
+    dd_stamp_savename = f'stamp_{ra}_{dec}_diff_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits'
     dd_stamp_path = stampmaker(ra,dec,decorr_imgpath,savename=dd_stamp_savename,shape=np.array([100,100]))
     if verbose:
         logger.debug(f'Path to final decorrelated differenced SN stamp: \n {dd_stamp_path}')   

@@ -31,7 +31,7 @@ import astropy.units as u
 
 # IMPORTS Internal:
 from phrosty.imagesubtraction import sky_subtract, imalign, get_imsim_psf, rotate_psf, crossconvolve
-from phrosty.utils import get_transient_info, transient_in_or_out, set_logger, get_templates, get_science
+from phrosty.utils import get_transient_info, set_logger, get_templates, get_science
 
 ###########################################################################
 # Get environment variables. 
@@ -119,7 +119,7 @@ def preprocess(ra,dec,band,pair_info,
     t_pointing, t_sca = t_info['pointing'], t_info['sca']
 
     sci_skysub_path = os.path.join(skysub_dir,f'skysub_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}.fits')
-    t_skysub = sci_skysub_path = os.path.join(skysub_dir,f'skysub_Roman_TDS_simple_model_{band}_{t_pointing}_{t_sca}.fits')
+    t_skysub = os.path.join(skysub_dir,f'skysub_Roman_TDS_simple_model_{band}_{t_pointing}_{t_sca}.fits')
 
     t_align_savename = f'skysub_Roman_TDS_simple_model_{band}_{t_pointing}_{t_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits'
     t_align = imalign(template_path=sci_skysub_path,sci_path=t_skysub,savename=t_align_savename,force=True) # NOTE: This is correct, not flipped.
