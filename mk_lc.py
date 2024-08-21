@@ -179,7 +179,7 @@ def make_phot_info_dict(oid,band,pair_info,pxcoords=(50,50),ap_r=4,n_templates=1
 
     return results_dict
 
-def run(oid,band,n_templates=1):
+def run(oid,band,n_templates=1,verbose=False):
     template_list = get_templates(oid,band,infodir,n_templates,verbose=verbose)
     science_list = get_science(oid,band,infodir,verbose=verbose)
     pairs = list(itertools.product(template_list,science_list))
@@ -684,6 +684,13 @@ def parse_and_run():
     )
 
     parser.add_argument(
+        '--verbose',
+        type=bool,
+        default=False,
+        help='Talkativeness of code.'
+    )
+
+    parser.add_argument(
         "--slurm_array",
         default=False,
         action="store_true",
@@ -699,7 +706,7 @@ def parse_and_run():
         print("Must specify either '--band' xor ('--slurm_array' and have SLURM_ARRAY_TASK_ID defined).")
         sys.exit()
 
-    run(args.oid, args.band, args.n_templates)
+    run(args.oid, args.band, args.n_templates, args.verbose)
     print("Finished making LCs!")
 
 
