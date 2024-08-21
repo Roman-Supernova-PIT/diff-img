@@ -4,7 +4,7 @@
 #SBATCH -C gpu
 #SBATCH -q debug # regular or debug
 #SBATCH --job-name=sfft
-#SBATCH --mem=64G # Comment this out while on -q debug because you get a whole node, so you can monitor with top to see how much you're using. 
+##SBATCH --mem=64G # Comment this out while on -q debug because you get a whole node, so you can monitor with top to see how much you're using. 
 #SBATCH --ntasks=1 # Leave as 1 because the tasks are divided in python. 
 #SBATCH --ntasks-per-node=1 # Same here. Leave as 1. 
 #SBATCH --output=/global/cfs/cdirs/m4385/users/lauren/out_logs/sfft/sfft-%J.out
@@ -34,6 +34,7 @@ export SIMS_DIR="/global/cfs/cdirs/lsst/shared/external/roman-desc-sims/Roman_da
 export SNANA_PQ_DIR="/global/cfs/cdirs/lsst/www/DESC_TD_PUBLIC/Roman+DESC/PQ+HDF5_ROMAN+LSST_LARGE" # Location of the SNANA parquet files. 
 export DIA_OUT_DIR="/pscratch/sd/l/laldorot/dia_out" # Parent output folder for DIA pipeline.
 export NVCC="/opt/nvidia/hpc_sdk/Linux_x86_64/23.9/cuda/12.2/bin/nvcc" # `whereis nvcc` path
+export LC_OUT_DIR="/global/cfs/cdirs/m4385/users/lauren/lcs" # Parent folder of save location for photometry data and figures.
 
 # Run program. 
 sne=( '20172782' )
@@ -43,15 +44,18 @@ for sn in "${sne[@]}"
 do
     echo "$sn"
     # Step 1: Get all images the object is in.
-    python -u get_object_instances.py "$sn"
+    # python -u get_object_instances.py "$sn"
     # Step 2: Sky subtract, align images to be in DIA. 
     # WAIT FOR COMPLETION. 
     # Step 3: Get, align, save PSFs; cross-convolve. 
-    srun python -u preprocess.py "$sn" --n-templates 1 --verbose True --slurm_array
+    # srun python -u preprocess.py "$sn" --n-templates 1 --verbose True --slurm_array
     # WAIT FOR COMPLETION.
     # Step 4: Differencing (GPU). 
-    srun python -u sfftdiff.py "$sn" --n-templates 1 --verbose True --slurm_array
+    # srun python -u sfftdiff.py "$sn" --n-templates 1 --verbose True --slurm_array
     # WAIT FOR COMPLETION.
     # Step 5: Generate decorrelation kernel, apply to diff. image and science image, make stamps. 
-    srun python -u postprocess.py "$sn" --n-templates 1 --verbose True --slurm_array
+    # srun python -u postprocess.py "$sn" --n-templates 1 --verbose True --slurm_array
+    # WAIT FOR COMPLETION.
+    # Step 6: Make LC and generate plots.
+    python -u mk_lc.py "$sn" --n-templates 1 --slurm_array
 done
