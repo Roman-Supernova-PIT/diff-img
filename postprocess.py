@@ -96,13 +96,13 @@ def postprocess(ra,dec,band,pair_info,
         logger.debug(f'Path to final decorrelated differenced image: \n {decorr_imgpath}')
 
     sci_conv = os.path.join(dia_out_dir,f'convolved/conv_sci_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
-    zpt_savename = f'zptimg_{band}_{sci_pointing}_{sci_sca}_-_{template_pointing}_{template_sca}.fits'
+    zpt_savename = f'zptimg_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits'
     zpt_imgpath = decorr_img(sci_conv,dcker_path,savename=zpt_savename)
     if verbose:
         logger.debug(f'Path to zeropoint image: \n {zpt_imgpath}')
 
     # Apply decorrelation kernel to PSF
-    decorr_psf_savename = f'psf_{band}_{sci_pointing}_{sci_sca}_-_{template_pointing}_{template_sca}.fits'
+    decorr_psf_savename = f'psf_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits'
     decorr_psfpath = decorr_img(sci_psf_path,dcker_path,savename=decorr_psf_savename)
     if verbose:
         logger.debug(f'Path to decorrelated PSF (use for photometry): \n {decorr_psfpath}')
@@ -129,6 +129,8 @@ def run(oid,band,n_templates=1,verbose=False):
 
     if verbose:
         start_time = time.time()
+
+    print('postprocess started!')
 
     ra,dec,start,end = get_transient_info(oid)
     template_list = get_templates(oid,band,infodir,n_templates,verbose=verbose)

@@ -2,6 +2,10 @@
 import argparse
 import os
 import sys
+import itertools
+from collections import defaultdict
+from functools import partial
+from multiprocessing import Pool, Manager
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 from scipy.interpolate import interp1d
@@ -21,7 +25,7 @@ from astropy.io import fits
 from astropy.coordinates import SkyCoord
 from astropy.wcs import WCS
 from astropy.wcs.utils import skycoord_to_pixel
-from astropy.table import Table
+from astropy.table import Table, hstack, unique
 from astropy.nddata import Cutout2D
 import astropy.units as u
 from galsim import roman
@@ -44,6 +48,9 @@ assert dia_out_dir is not None, 'You need to set DIA_INFO_DIR as an environment 
 lc_out_dir = os.getenv('LC_OUT_DIR', None)
 assert lc_out_dir is not None, 'You need to set LC_OUT_DIR as an environment variable.'
 
+snid_lc_dir = os.getenv('SNID_LC_DIR', None)
+assert snid_lc_dir is not None, 'You need to set SNID_LC_DIR as an environment variable.'
+
 ###########################################################################
 
 def get_galsim_values(band):
@@ -60,18 +67,18 @@ def get_stars(band,truthpath,nx=4088,ny=4088,transform=False,wcs=None):
     Optional to transform to another WCS. 
     """
     truth_tab = read_truth_txt(path=truthpath)
-    truth_tab['x'].name, truth_tab['y'].name = 'x_orig', 'y_orig'
     truth_tab['mag'].name = 'mag_truth'
     truth_tab['flux'].name = 'flux_truth'
 
     if transform:
         assert wcs is not None, 'You need to provide a WCS to transform to!'
+        truth_tab['x'].name, truth_tab['y'].name = 'x_orig', 'y_orig'
         worldcoords = SkyCoord(ra=truth_tab['ra'] * u.deg, dec=truth_tab['dec'] * u.deg)
         x, y = skycoord_to_pixel(worldcoords, wcs)
         truth_tab['x'] = x
         truth_tab['y'] = y
 
-    star_idx = np.where(truth_tab['obj_type'] == 'star')[0]
+    idx = np.where(truth_tab['obj_type'] == 'star')[0]
     stars = truth_tab[idx]
     stars = stars[np.logical_and(stars["x"] < nx, stars["x"] > 0)]
     stars = stars[np.logical_and(stars["y"] < ny, stars["y"] > 0)]
@@ -88,7 +95,7 @@ def get_psf(psfpath):
 
     return psf
 
-def get_zpt(zptimg,psf,stars):
+def get_zpt(zptimg,psf,band,stars):
     """
     Get the zeropoint based on the stars in the convolved, decorrelated science image. 
     """
@@ -99,10 +106,9 @@ def get_zpt(zptimg,psf,stars):
 
     # Do not need to cross match. Can just merge tables because they
     # will be in the same order. 
-    photres = hstack([stars,final_params])
+    photres = hstack([stars, final_params])
 
     # Get the zero point. 
-    truth_tab = read_truth_txt(path=truthpath)
     galsim_vals = get_galsim_values(band)
     star_fit_mags = -2.5 * np.log10(photres['flux_fit'])
     star_truth_mags = -2.5 * np.log10(photres['flux_truth']) + 2.5 * np.log10(galsim_vals['exptime'] * galsim_vals['area_eff']) + galsim_vals['gs_zpt']
@@ -113,7 +119,7 @@ def get_zpt(zptimg,psf,stars):
 
     return zpt
 
-def phot_at_coords(img,psf,pxcoords=(50,50),ap_r=4):
+def phot_at_coords(img, psf, pxcoords=(50, 50), ap_r=4):
     """
     Do photometry at forced set of pixel coordinates. 
     """
@@ -122,8 +128,8 @@ def phot_at_coords(img,psf,pxcoords=(50,50),ap_r=4):
     init = ap_phot(img,forcecoords,ap_r=ap_r)
     final = psf_phot(img,psf,init,forced_phot=True)
 
-    flux = final['flux_fit'][0].value
-    flux_err = final['flux_err'][0].value
+    flux = final['flux_fit'][0]
+    flux_err = final['flux_err'][0]
     mag = -2.5 * np.log10(final["flux_fit"][0])
     mag_err = (2.5 / np.log(10)) * np.abs(final["flux_err"][0] / final["flux_fit"][0])
 
@@ -136,37 +142,41 @@ def phot_at_coords(img,psf,pxcoords=(50,50),ap_r=4):
 
     return results_dict
 
-def make_phot_info_dict(oid,band,pair_info,pxcoords=(50,50),ap_r=4,n_templates=1):
+def make_phot_info_dict(oid, band, pair_info, pxcoords=(50, 50), ap_r=4):
 
-    ra,dec,start,end = get_transient_info(oid)
+    ra, dec, start, end = get_transient_info(oid)
     template_info, sci_info = pair_info
     sci_pointing, sci_sca = sci_info['pointing'], sci_info['sca']
     template_pointing, template_sca = template_info['pointing'], template_info['sca']
 
+    # Get MJD. 
+    mjd = get_mjd(sci_pointing)
+
     # Load in the difference image stamp.
-    diff_img_stamp_path = os.path.join(dia_out_dir,f'stamps/stamp_{ra}_{dec}_diff_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
+    diff_img_stamp_path = os.path.join(dia_out_dir, f'stamps/stamp_{ra}_{dec}_diff_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
     with fits.open(diff_img_stamp_path) as diff_hdu:
         diffimg = diff_hdu[0].data
 
     # Load in the decorrelated PSF.
-    psfpath =  os.path.join(dia_out_dir, f'decorr/psf_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
+    psfpath = os.path.join(dia_out_dir, f'decorr/psf_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
     psf = get_psf(psfpath)
-    results_dict = phot_at_coords(diffimg,psf,pxcoords=pxcoords,ap_r=4)
+    results_dict = phot_at_coords(diffimg, psf, pxcoords=pxcoords, ap_r=ap_r)
 
-    # Get the zero point from the decorrelated, convolved science image. 
+    # Get the zero point from the decorrelated, convolved science image.
     # First, get the table of known stars.
     truthpath = os.path.join(simsdir, f'RomanTDS/truth/{band}/{sci_pointing}/Roman_TDS_index_{band}_{sci_pointing}_{sci_sca}.txt')
-    stars = get_stars(band,truthpath)
+    stars = get_stars(band, truthpath)
 
     # Now, calculate the zero point based on those stars. 
     zptimg_path = os.path.join(dia_out_dir, f'decorr/zptimg_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
     with fits.open(zptimg_path) as hdu:
         zptimg = hdu[0].data
-    zpt = get_zpt(zptimg,psf,stars)
+    zpt = get_zpt(zptimg, psf, band, stars)
 
     # Add additional info to the results dictionary so it can be merged into a nice file later.
     results_dict['ra'] = ra
     results_dict['dec'] = dec
+    results_dict['mjd'] = mjd
     results_dict['filter'] = band
     results_dict['pointing'] = sci_pointing
     results_dict['sca'] = sci_sca
@@ -174,28 +184,127 @@ def make_phot_info_dict(oid,band,pair_info,pxcoords=(50,50),ap_r=4,n_templates=1
     results_dict['template_sca'] = template_sca
     results_dict['zpt'] = zpt
 
-    print('results_dict')
-    print(results_dict)
-
     return results_dict
+
+# def get_truth_lcs(oid, band, mjd):
+
+
+def make_lc_plot(oid, band, start, end, phot_path=None):
+    # MAKE ONE LC PLOT
+    # Read in truth:
+    # truthpath = f"/hpc/group/cosmology/phy-lsst/work/dms118/roman_imsim/filtered_data/filtered_data_{oid}.txt"
+
+    # truth = Table.read(truthpath, names=["mjd", "filter", "mag"], format="ascii")[:-1]
+
+    # truth["mjd"] = [row["mjd"].replace("(", "") for row in truth]
+    # truth["mag"] = [row["mag"].replace(")", "") for row in truth]
+
+    # truth["mjd"] = truth["mjd"].astype(float)
+    # truth["mag"] = truth["mag"].astype(float)
+    # truth["filter"] = [filt.upper() for filt in truth["filter"]]
+    # truth = truth[truth["filter"] == band[:1]]
+    # truth.sort("mjd")
+
+    # truthfunc = interp1d(truth["mjd"], truth["mag"], bounds_error=False)
+
+    # Get photometry.
+    phot = Table.read(phot_path)
+    phot.sort("mjd")
+
+    template_pointing = str(np.unique(phot['template_pointing'].data)[0])
+    template_sca = str(np.unique(phot['template_sca'].data)[0])
+
+    print('TEMPLATE POINTING, TEMPLATE SCA')
+    print(template_pointing, template_sca)
+
+    # Make residuals.
+    # resids = truthfunc(phot["mjd"]) - (phot["mag"] + phot["zpt"])
+
+    fig, ax = plt.subplots(nrows=2, sharex=True, height_ratios=[1, 0.5], figsize=(14, 14))
+    plt.subplots_adjust(hspace=0)
+
+    ax[0].errorbar(
+        phot["mjd"],
+        phot["mag_fit"] + phot["zpt"],
+        yerr=phot["mag_fit_err"],
+        marker="o",
+        linestyle="",
+        color="mediumpurple",
+    )
+    # ax[0].plot(truth["mjd"], truth["mag"], marker=None, linestyle="-", color="mediumpurple")
+
+    ax[1].axhline(0, color="k", linestyle="--")
+    # ax[1].errorbar(phot["mjd"], resids, marker="o", linestyle="", color="mediumpurple")
+
+    ax[0].set_xlim(start, end)
+    ax[0].set_ylim(29, 21)
+    ax[0].set_ylabel(band)
+    ax[1].set_xlabel("MJD")
+
+    fig.suptitle(oid, y=0.91)
+
+    savedir = os.path.join(lc_out_dir,f'figs/{oid}')
+    os.makedirs(savedir, exist_ok=True)
+    savename = f'{oid}_{band}_{template_pointing}_{template_sca}.png'
+    savepath = os.path.join(savedir,savename)
+    plt.savefig(savepath, dpi=300, bbox_inches="tight")
+    plt.close()
+
+
+def split_table(oid, band, tab, template_info):
+    template_pointing, template_sca = template_info
+    tab = tab[tab['template_pointing'] == template_pointing]
+    savedir = os.path.join(lc_out_dir,f'data/{str(oid)}')
+    os.makedirs(savedir, exist_ok=True)
+    savename = f'{oid}_{band}_{template_pointing}_{template_sca}.csv'
+    savepath = os.path.join(savedir,savename)
+    tab.write(savepath, format='csv', overwrite=True)
+
+    return savepath
 
 def run(oid,band,n_templates=1,verbose=False):
     template_list = get_templates(oid,band,infodir,n_templates,verbose=verbose)
     science_list = get_science(oid,band,infodir,verbose=verbose)
     pairs = list(itertools.product(template_list,science_list))
 
-    for pair in pairs:
-        res = make_phot_info_dict(oid,band,pair)
+    partial_make_phot_info_dict = partial(make_phot_info_dict,oid,band,n_templates=n_templates)
 
+    cpus_per_task = int(os.environ['SLURM_CPUS_PER_TASK'])
+    with Manager() as mgr:
+        mgr_pairs = mgr.list(pairs)
+        with Pool(cpus_per_task) as pool:
+            res = pool.map(partial_make_phot_info_dict, mgr_pairs)
+            pool.close()
+            pool.join()
 
+    results_dict = defaultdict(list)
+    for d in res:
+        for key, value in d.items():
+            results_dict[key].append(value)
 
+    results_tab = Table(results_dict)
+    results_tab.sort('pointing')
+    results_savedir = os.path.join(lc_out_dir,f'data/{str(oid)}')
+    os.makedirs(results_savedir, exist_ok=True)
+    results_savename = f'{oid}_{band}_all.csv'
+    results_savepath = os.path.join(results_savedir,results_savename)
+    results_tab.write(results_savepath, format='csv', overwrite=True)
 
+    partial_split_table = partial(split_table,oid,band,results_tab)
 
+    pointings = unique(results_tab['template_pointing','template_sca'], keys='template_pointing').as_array()
+    print('POINTINGS')
+    print(pointings)
+    with Pool(n_templates) as pool_2:
+        res_2 = pool_2.map(partial_split_table,pointings)
+        pool_2.close()
+        pool_2.join()
 
+    ra,dec,start,end = get_transient_info(oid)
+    for path in res_2:
+        make_lc_plot(oid, band, start, end, path)
 
-
-
-
+    
 
 # def calc_sn_photometry(img, wcs, psf, coord):
 #     """
@@ -577,58 +686,7 @@ def run(oid,band,n_templates=1,verbose=False):
 
 #     return sn_phot
 
-# def make_lc_plot(oid, band, template_pointing, template_sca, 
-#                 start, end, plot_filename, phot_path=None):
-#     # MAKE ONE LC PLOT
-#     # Read in truth:
-#     truthpath = f"/hpc/group/cosmology/phy-lsst/work/dms118/roman_imsim/filtered_data/filtered_data_{oid}.txt"
 
-#     truth = Table.read(truthpath, names=["mjd", "filter", "mag"], format="ascii")[:-1]
-
-#     truth["mjd"] = [row["mjd"].replace("(", "") for row in truth]
-#     truth["mag"] = [row["mag"].replace(")", "") for row in truth]
-
-#     truth["mjd"] = truth["mjd"].astype(float)
-#     truth["mag"] = truth["mag"].astype(float)
-#     truth["filter"] = [filt.upper() for filt in truth["filter"]]
-#     truth = truth[truth["filter"] == band[:1]]
-#     truth.sort("mjd")
-
-#     truthfunc = interp1d(truth["mjd"], truth["mag"], bounds_error=False)
-
-#     # Get photometry.
-#     if phot_path is None:
-#         phot_path = os.path.join(lc_out_dir,f'data/{oid}/{oid}_{band}_{template_pointing}_{template_sca}.csv')
-#     phot = Table.read(phot_path)
-#     phot.sort("mjd")
-
-#     # Make residuals.
-#     resids = truthfunc(phot["mjd"]) - (phot["mag"] + phot["zpt"])
-
-#     fig, ax = plt.subplots(nrows=2, sharex=True, height_ratios=[1, 0.5], figsize=(14, 14))
-#     plt.subplots_adjust(hspace=0)
-
-#     ax[0].errorbar(
-#         phot["mjd"],
-#         phot["mag"] + phot["zpt"],
-#         yerr=phot["magerr"],
-#         marker="o",
-#         linestyle="",
-#         color="mediumpurple",
-#     )
-#     ax[0].plot(truth["mjd"], truth["mag"], marker=None, linestyle="-", color="mediumpurple")
-
-#     ax[1].axhline(0, color="k", linestyle="--")
-#     ax[1].errorbar(phot["mjd"], resids, marker="o", linestyle="", color="mediumpurple")
-
-#     ax[0].set_xlim(start, end)
-#     ax[0].set_ylim(29, 21)
-#     ax[0].set_ylabel(band)
-#     ax[1].set_xlabel("MJD")
-
-#     fig.suptitle(oid, y=0.91)
-#     plt.savefig(plot_filename, dpi=300, bbox_inches="tight")
-#     plt.close()
 
 
 # def run(oid, band, n_templates=1, inputdir=dia_out_dir, outputdir=lc_out_dir):
