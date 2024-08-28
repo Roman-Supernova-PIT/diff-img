@@ -31,7 +31,7 @@ import astropy.units as u
 from galsim import roman
 
 # IMPORTS Internal:
-from phrosty.utils import read_truth_txt, get_mjd, get_transient_radec, get_transient_mjd, get_mjd_info, get_exptime, get_transient_info, transient_in_or_out, get_science, get_templates, get_exptime
+from phrosty.utils import read_truth_txt, get_roman_bands, get_mjd, get_transient_radec, get_transient_mjd, get_mjd_info, get_exptime, get_transient_info, transient_in_or_out, get_science, get_templates, get_exptime
 from phrosty.photometry import ap_phot, psfmodel, psf_phot, crossmatch
 
 ###########################################################################
@@ -186,26 +186,45 @@ def make_phot_info_dict(oid, band, pair_info, pxcoords=(50, 50), ap_r=4):
 
     return results_dict
 
-# def get_truth_lcs(oid, band, mjd):
+def get_truth_lc(oid, band):
 
+    shortened_bands = {filt: str(filt[0]) for filt in get_roman_bands()}
+
+    base_path = os.path.join(snid_lc_dir,'ROMAN+LSST_NONIaMODEL0-')
+    for i in range(1,31):
+        suffix = f"{i:04d}"  # format to get 0001, 0002, etc.
+        path_head = base_path+suffix+"_HEAD.FITS.gz"
+        path_phot = base_path+suffix+"_PHOT.FITS.gz"
+
+        with fits.open(path_head) as hdu:
+            data_head = hdu[1].data
+            snid_array = data_head['SNID']
+            ptr_obs_min = data_head['PTROBS_MIN']
+            ptr_obs_max = data_head['PTROBS_MAX']
+
+            try:
+                idx = list(snid_array).index(str(oid))
+                start = ptr_obs_min[idx]
+                end = ptr_obs_max[idx]+1
+
+                with fits.open(path_phot) as hdu_phot:
+                    data_phot = Table(hdu_phot[1].data)
+                    extracted_data = data_phot[start:end]
+                    bands_col = extracted_data['BAND'].data  # There is a trailing whitespace in each entry in this column!
+                    sb = shortened_bands[band]
+                    bands_idx = [j for j, b in enumerate(bands_col) if b[0] == sb]  # [0] for the trailing whitespace!
+                    band_filtered_data = extracted_data[bands_idx]
+
+                return band_filtered_data
+
+            except ValueError:
+                continue
 
 def make_lc_plot(oid, band, start, end, phot_path=None):
-    # MAKE ONE LC PLOT
-    # Read in truth:
-    # truthpath = f"/hpc/group/cosmology/phy-lsst/work/dms118/roman_imsim/filtered_data/filtered_data_{oid}.txt"
 
-    # truth = Table.read(truthpath, names=["mjd", "filter", "mag"], format="ascii")[:-1]
-
-    # truth["mjd"] = [row["mjd"].replace("(", "") for row in truth]
-    # truth["mag"] = [row["mag"].replace(")", "") for row in truth]
-
-    # truth["mjd"] = truth["mjd"].astype(float)
-    # truth["mag"] = truth["mag"].astype(float)
-    # truth["filter"] = [filt.upper() for filt in truth["filter"]]
-    # truth = truth[truth["filter"] == band[:1]]
-    # truth.sort("mjd")
-
-    # truthfunc = interp1d(truth["mjd"], truth["mag"], bounds_error=False)
+    # First, get truth LC.
+    truthdata = get_truth_lc(oid,band)
+    truthfunc = interp1d(truthdata["MJD"], truthdata["SIM_MAGOBS"], bounds_error=False)
 
     # Get photometry.
     phot = Table.read(phot_path)
@@ -214,11 +233,8 @@ def make_lc_plot(oid, band, start, end, phot_path=None):
     template_pointing = str(np.unique(phot['template_pointing'].data)[0])
     template_sca = str(np.unique(phot['template_sca'].data)[0])
 
-    print('TEMPLATE POINTING, TEMPLATE SCA')
-    print(template_pointing, template_sca)
-
     # Make residuals.
-    # resids = truthfunc(phot["mjd"]) - (phot["mag"] + phot["zpt"])
+    resids = truthfunc(phot["mjd"]) - (phot["mag_fit"] + phot["zpt"])
 
     fig, ax = plt.subplots(nrows=2, sharex=True, height_ratios=[1, 0.5], figsize=(14, 14))
     plt.subplots_adjust(hspace=0)
@@ -231,10 +247,10 @@ def make_lc_plot(oid, band, start, end, phot_path=None):
         linestyle="",
         color="mediumpurple",
     )
-    # ax[0].plot(truth["mjd"], truth["mag"], marker=None, linestyle="-", color="mediumpurple")
+    ax[0].plot(truthdata["MJD"], truthdata["SIM_MAGOBS"], marker=None, linestyle="-", color="mediumpurple")
 
     ax[1].axhline(0, color="k", linestyle="--")
-    # ax[1].errorbar(phot["mjd"], resids, marker="o", linestyle="", color="mediumpurple")
+    ax[1].errorbar(phot["mjd"], resids, marker="o", linestyle="", color="mediumpurple")
 
     ax[0].set_xlim(start, end)
     ax[0].set_ylim(29, 21)
@@ -267,7 +283,7 @@ def run(oid,band,n_templates=1,verbose=False):
     science_list = get_science(oid,band,infodir,verbose=verbose)
     pairs = list(itertools.product(template_list,science_list))
 
-    partial_make_phot_info_dict = partial(make_phot_info_dict,oid,band,n_templates=n_templates)
+    partial_make_phot_info_dict = partial(make_phot_info_dict,oid,band)
 
     cpus_per_task = int(os.environ['SLURM_CPUS_PER_TASK'])
     with Manager() as mgr:
@@ -293,8 +309,6 @@ def run(oid,band,n_templates=1,verbose=False):
     partial_split_table = partial(split_table,oid,band,results_tab)
 
     pointings = unique(results_tab['template_pointing','template_sca'], keys='template_pointing').as_array()
-    print('POINTINGS')
-    print(pointings)
     with Pool(n_templates) as pool_2:
         res_2 = pool_2.map(partial_split_table,pointings)
         pool_2.close()
