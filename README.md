@@ -21,7 +21,7 @@ Currently developed and tested at Duke Computing Cluster and Perlmutter at NERSC
 This then calls `get_object_instances`, `preprocess`, `sfftdiff`, `postprocess`, and `mk_lc` with the SN ID (refered to as `oid` in the code).  
 `sfft_and_animate_*.py` reads the SLURM_ARRAY_JOBID from the environment and uses that to select the band to process.  (1-7).
 
-`sfft_and_animate_*.py` reads input data from input data as defined by `phrosty.utils._build_filepath`, which uses environment `ROOTDIR` or a default to look for the data.  `ROOTDIR` should match where the RomanDESCSims are.
+`sfft_and_animate_*.py` reads input data from input data as defined by `phrosty.utils._build_filepath`, which uses environment variable`SIMS_DIR` to look for the data. `SIMS_DIR` should match where the RomanDESCSims are.
 
 `preprocess.py`, `sfftdiff.py`, and `postprocess.py` write files out to environment variable `DIA_OUT_DIR`.
 
