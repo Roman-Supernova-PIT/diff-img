@@ -142,7 +142,7 @@ def phot_at_coords(img, psf, pxcoords=(50, 50), ap_r=4):
 
     return results_dict
 
-def make_phot_info_dict(oid, band, pair_info, pxcoords=(50, 50), ap_r=4):
+def make_phot_info_dict(oid, band, pair_info, ap_r=4):
 
     ra, dec, start, end = get_transient_info(oid)
     template_info, sci_info = pair_info
@@ -152,15 +152,18 @@ def make_phot_info_dict(oid, band, pair_info, pxcoords=(50, 50), ap_r=4):
 
     # Make sure there's a difference image stamp to do photometry on.
     diff_img_stamp_path = os.path.join(dia_out_dir, f'stamps/stamp_{ra}_{dec}_diff_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
-    
+
     if os.path.exists(diff_img_stamp_path):
         # Load in the difference image stamp.
         with fits.open(diff_img_stamp_path) as diff_hdu:
             diffimg = diff_hdu[0].data
+            wcs = WCS(diff_hdu[0].header)
 
         # Load in the decorrelated PSF.
         psfpath = os.path.join(dia_out_dir, f'decorr/psf_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
         psf = get_psf(psfpath)
+        coord = SkyCoord(ra=ra*u.deg,dec=dec*u.deg)
+        pxcoords = skycoord_to_pixel(coord,wcs)
         results_dict = phot_at_coords(diffimg, psf, pxcoords=pxcoords, ap_r=ap_r)
 
         # Get the zero point from the decorrelated, convolved science image.
