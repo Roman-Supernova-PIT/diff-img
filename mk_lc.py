@@ -111,9 +111,6 @@ def get_zpt(zptimg,psf,band,stars):
     # Get the zero point. 
     galsim_vals = get_galsim_values(band)
     star_fit_mags = -2.5 * np.log10(photres['flux_fit'])
-    print('STAR_FIT_MAGS')
-    print(np.nanmedian(star_fit_mags))
-
     star_truth_mags = -2.5 * np.log10(photres['flux_truth']) + 2.5 * np.log10(galsim_vals['exptime'] * galsim_vals['area_eff']) + galsim_vals['gs_zpt']
 
     # Eventually, this should be a S/N cut, not a mag cut. 
