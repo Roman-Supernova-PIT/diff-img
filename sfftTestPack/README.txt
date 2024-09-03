@@ -1,7 +1,7 @@
 Requirment on Python Enviornment 
 
 # roman_imsim for retreiving psf models
-# download repo from https://codeload.github.com/matroxel/roman_imsim/zip/refs/heads/v2.0
+pip install https://codeload.github.com/matroxel/roman_imsim/zip/refs/heads/v2.0
 python setup.py install
 
 # sfft for image subtraction
