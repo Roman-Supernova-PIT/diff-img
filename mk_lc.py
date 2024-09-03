@@ -60,7 +60,7 @@ def get_galsim_values(band):
 
     return {'exptime': exptime, 'area_eff': area_eff, 'gs_zpt': gs_zpt}
 
-def get_stars(band,truthpath,nx=4088,ny=4088,transform=False,wcs=None):
+def get_stars(truthpath,nx=4088,ny=4088,transform=False,wcs=None):
     """
     Get the stars in the science images.
 
@@ -99,18 +99,21 @@ def get_zpt(zptimg,psf,band,stars):
     """
     Get the zeropoint based on the stars in the convolved, decorrelated science image. 
     """
-    
+
     # First, need to do photometry on the stars.
     init_params = ap_phot(zptimg, stars)
     final_params = psf_phot(zptimg, psf, init_params)
 
     # Do not need to cross match. Can just merge tables because they
-    # will be in the same order. 
+    # will be in the same order.
     photres = hstack([stars, final_params])
 
     # Get the zero point. 
     galsim_vals = get_galsim_values(band)
     star_fit_mags = -2.5 * np.log10(photres['flux_fit'])
+    print('STAR_FIT_MAGS')
+    print(np.nanmedian(star_fit_mags))
+
     star_truth_mags = -2.5 * np.log10(photres['flux_truth']) + 2.5 * np.log10(galsim_vals['exptime'] * galsim_vals['area_eff']) + galsim_vals['gs_zpt']
 
     # Eventually, this should be a S/N cut, not a mag cut. 
@@ -148,41 +151,59 @@ def make_phot_info_dict(oid, band, pair_info, pxcoords=(50, 50), ap_r=4):
     template_info, sci_info = pair_info
     sci_pointing, sci_sca = sci_info['pointing'], sci_info['sca']
     template_pointing, template_sca = template_info['pointing'], template_info['sca']
-
-    # Get MJD. 
     mjd = get_mjd(sci_pointing)
 
-    # Load in the difference image stamp.
+    # Make sure there's a difference image stamp to do photometry on.
     diff_img_stamp_path = os.path.join(dia_out_dir, f'stamps/stamp_{ra}_{dec}_diff_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
-    with fits.open(diff_img_stamp_path) as diff_hdu:
-        diffimg = diff_hdu[0].data
+    
+    if os.path.exists(diff_img_stamp_path):
+        # Load in the difference image stamp.
+        with fits.open(diff_img_stamp_path) as diff_hdu:
+            diffimg = diff_hdu[0].data
 
-    # Load in the decorrelated PSF.
-    psfpath = os.path.join(dia_out_dir, f'decorr/psf_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
-    psf = get_psf(psfpath)
-    results_dict = phot_at_coords(diffimg, psf, pxcoords=pxcoords, ap_r=ap_r)
+        # Load in the decorrelated PSF.
+        psfpath = os.path.join(dia_out_dir, f'decorr/psf_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
+        psf = get_psf(psfpath)
+        results_dict = phot_at_coords(diffimg, psf, pxcoords=pxcoords, ap_r=ap_r)
 
-    # Get the zero point from the decorrelated, convolved science image.
-    # First, get the table of known stars.
-    truthpath = os.path.join(simsdir, f'RomanTDS/truth/{band}/{sci_pointing}/Roman_TDS_index_{band}_{sci_pointing}_{sci_sca}.txt')
-    stars = get_stars(band, truthpath)
+        # Get the zero point from the decorrelated, convolved science image.
+        # First, get the table of known stars.
+        truthpath = os.path.join(simsdir, f'RomanTDS/truth/{band}/{sci_pointing}/Roman_TDS_index_{band}_{sci_pointing}_{sci_sca}.txt')
+        stars = get_stars(truthpath)
 
-    # Now, calculate the zero point based on those stars. 
-    zptimg_path = os.path.join(dia_out_dir, f'decorr/zptimg_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
-    with fits.open(zptimg_path) as hdu:
-        zptimg = hdu[0].data
-    zpt = get_zpt(zptimg, psf, band, stars)
+        # Now, calculate the zero point based on those stars. 
+        zptimg_path = os.path.join(dia_out_dir, f'decorr/zptimg_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
+        with fits.open(zptimg_path) as hdu:
+            zptimg = hdu[0].data
+        zpt = get_zpt(zptimg, psf, band, stars)
 
-    # Add additional info to the results dictionary so it can be merged into a nice file later.
-    results_dict['ra'] = ra
-    results_dict['dec'] = dec
-    results_dict['mjd'] = mjd
-    results_dict['filter'] = band
-    results_dict['pointing'] = sci_pointing
-    results_dict['sca'] = sci_sca
-    results_dict['template_pointing'] = template_pointing
-    results_dict['template_sca'] = template_sca
-    results_dict['zpt'] = zpt
+        # Add additional info to the results dictionary so it can be merged into a nice file later.
+        results_dict['ra'] = ra
+        results_dict['dec'] = dec
+        results_dict['mjd'] = mjd
+        results_dict['filter'] = band
+        results_dict['pointing'] = sci_pointing
+        results_dict['sca'] = sci_sca
+        results_dict['template_pointing'] = template_pointing
+        results_dict['template_sca'] = template_sca
+        results_dict['zpt'] = zpt
+
+    else:
+        print(f'Post-processed image files for {band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca} do not exist. Skipping.')
+        results_dict = {}
+        results_dict['ra'] = ra
+        results_dict['dec'] = dec
+        results_dict['mjd'] = mjd
+        results_dict['filter'] = band
+        results_dict['pointing'] = sci_pointing
+        results_dict['sca'] = sci_sca
+        results_dict['template_pointing'] = template_pointing
+        results_dict['template_sca'] = template_sca
+        results_dict['zpt'] = np.nan
+        results_dict['flux_fit'] = np.nan
+        results_dict['flux_fit_err'] = np.nan
+        results_dict['mag_fit'] = np.nan
+        results_dict['mag_fit_err'] = np.nan
 
     return results_dict
 
@@ -318,255 +339,6 @@ def run(oid,band,n_templates=1,verbose=False):
     for path in res_2:
         make_lc_plot(oid, band, start, end, path)
 
-    
-
-# def calc_sn_photometry(img, wcs, psf, coord):
-#     """
-#     Do photometry on the SN itself
-#     """
-#     # Photometry on the SN itself.
-#     px_coords = wcs.world_to_pixel(coord)
-#     forcecoords = Table([[float(px_coords[0])], [float(px_coords[1])]], names=["x", "y"])
-#     init_sn = ap_phot(img.data, forcecoords, ap_r=4)
-#     sn_phot = psf_phot(img.data, psf, init_sn, wcs=wcs, forced_phot=True)
-
-#     print("SN results from SN photometry:", sn_phot["flux_fit"])
-
-#     mag = -2.5 * np.log10(sn_phot["flux_fit"][0])
-#     mag_err = (2.5 / np.log(10)) * np.abs(sn_phot["flux_err"][0] / sn_phot["flux_fit"][0])
-#     sn_phot["mag"] = mag
-#     sn_phot["mag_err"] = mag_err
-
-# def make_lc(
-#     oid, band, exptime, area_eff, in_tab, t_pointing, t_sca, inputdir=dia_out_dir, outputdir=lc_out_dir
-# ):
-#     """
-#     Make one light curve for one series of single-epoch subtractions 
-#     (i.e., one SN using DIA all with the same template).
-#     """
-
-#     ra,dec,start,end = get_transient_info(oid)
-#     coord = SkyCoord(ra=ra*u.deg,dec=dec*u.deg)
-
-#     filters = []
-#     pointings = []
-#     scas = []
-#     mjds = []
-#     mags = []
-#     magerr = []
-#     fluxes = []
-#     fluxerrs = []
-#     zpts = []
-#     ra_init = []
-#     dec_init = []
-#     x_init = []
-#     y_init = []
-#     ra_fit = []
-#     dec_fit = []
-#     x_fit = []
-#     y_fit = []
-
-#     transient_info_file = os.path.join(
-#         infodir, f"roman_sim_imgs/Roman_Rubin_Sims_2024/{oid}/{oid}_instances_nomjd.csv"
-#     )
-#     tab = Table.read(transient_info_file)
-#     tab = tab[tab["filter"] == band]
-#     tab.sort("pointing")
-
-#     gs_zpt = roman.getBandpasses()[band].zeropoint
-
-#     tab = tab[1:]  # Because the first one is the reference image.
-#     gs_zpt = roman.getBandpasses()[band].zeropoint
-
-#     for row in in_tab:
-#         pointing, sca = row["pointing"], row["sca"]
-#         print(band, get_mjd(pointing), pointing, sca)
-
-#         # Open necessary images.
-#         # Zeropoint image:
-#         zp_imgdir = os.path.join(
-#             inputdir,
-#             f"decorr/zptimg_{band}_{pointing}_{sca}_-_{t_pointing}_{t_sca}.fits",
-#         )
-
-#         # SN difference image:
-#         sndir = os.path.join(
-#             inputdir,
-#             f"decorr/decorr_diff_{band}_{pointing}_{sca}_-_{t_pointing}_{t_sca}.fits",
-#         )
-
-#         # PSF: 
-#         psf_imgdir = os.path.join(
-#             inputdir,
-#             f"decorr/psf_{band}_{pointing}_{sca}_-_{t_pointing}_{t_sca}.fits",
-#         )
-
-#         input_paths = [zp_imgdir,sndir,psf_imgdir]
-#         paths_exist = [os.path.exists(path) for path in input_paths]
-
-#         if all(paths_exist):
-#             # Sky-subtracted field for generating the ZP.
-#             zp_hdu = fits.open(zp_imgdir)
-#             zp_img = zp_hdu[0].data
-#             zp_wcs = WCS(zp_hdu[0].header)
-
-#             # Subtracted stamp (SN only)
-#             sub_hdu = fits.open(sndir)
-#             sub_img = sub_hdu[0].data
-#             sub_wcs = WCS(sub_hdu[0].header)
-
-#             # PSF
-#             psf_hdu = fits.open(psf_imgdir)
-#             psf_img = psf_hdu[0].data
-
-#             stars = get_star_truth_coordinates_in_aligned_images(
-#                 oid, band, pointing, sca, zp_wcs, exptime, area_eff, gs_zpt, nx=4088, ny=4088
-#             )
-
-#             # Have to clean out the rows where the value is centered on a NaN.
-#             # MWV: 2024-07-12  Why?  I mean, why do this based on central pixel
-#             # instead of waiting till you get the photometry results and on that.
-#             cutouts = [
-#                 Cutout2D(zp_img, (x, y), wcs=zp_wcs, size=50, mode="partial").data
-#                 for (x, y) in zip(stars["x"], stars["y"])
-#             ]
-#             nanrows = np.array([~np.any(np.isnan(cut)) for cut in cutouts])
-#             stars = stars[nanrows]
-
-#             # Do PSF photometry to get the zero point.
-#             # Build PSF.
-#             psf = psfmodel(psf_img)
-#             init_params = ap_phot(zp_img, stars)
-#             res = psf_phot(zp_img, psf, init_params, wcs=zp_wcs)
-#             # MWV: 2024-07-12:  What is this printing?
-#             # The instrumental flux for the SN?
-#             print("SN results from star photometry:", res[-1]["flux_fit"])
-
-#             # Crossmatch.
-#             xm = crossmatch(res, stars)
-
-#             # Get the zero point.
-#             star_fit_mags = -2.5 * np.log10(xm["flux_fit"])
-#             star_truth_mags = -2.5 * np.log10(xm["flux_truth"].data) + 2.5 * np.log10(exptime * area_eff) + gs_zpt
-#             zpt_mask = np.logical_and(star_truth_mags > 20, star_truth_mags < 23)
-#             zpt = np.nanmedian(star_truth_mags[zpt_mask] - star_fit_mags[zpt_mask])
-
-#             try:
-#                 print('SUBTRACTED IMAGE, WCS, PSF, COORD')
-#                 print(sub_img)
-#                 print(sub_wcs)
-#                 print(coord)
-#                 sn_phot = calc_sn_photometry(sub_img, sub_wcs, psf, coord)
-#             # MWV: 2024-07-12: Why is this the error we expect?
-#             except TypeError as te:
-#                 print(te)
-#                 print(f"fit_shape overlaps with edge for {band} {pointing} {sca}.")
-#                 continue
-#             except ValueError as ve:
-#                 print(ve)
-#                 print(f'There are probably NaNs where an object should be in {band} {pointing} {sca}.')
-#                 continue
-
-
-#             filters.append(band)
-#             pointings.append(pointing)
-#             scas.append(sca)
-#             mjds.append(get_mjd(pointing))
-#             mags.append(sn_phot["mag"][0])
-#             magerr.append(sn_phot["mag_err"][0])
-#             fluxes.append(sn_phot["flux_fit"][0])
-#             fluxerrs.append(sn_phot["flux_err"][0])
-#             zpts.append(zpt)
-#             ra_init.append(sn_phot["ra_init"][0])
-#             dec_init.append(sn_phot["dec_init"][0])
-#             x_init.append(sn_phot["x_init"][0])
-#             y_init.append(sn_phot["y_init"][0])
-#             ra_fit.append(sn_phot["ra"][0])
-#             dec_fit.append(sn_phot["dec"][0])
-#             x_fit.append(sn_phot["x_fit"][0])
-#             y_fit.append(sn_phot["y_fit"][0])
-#         else:
-#             continue
-
-#     results = Table(
-#         [
-#             filters,
-#             pointings,
-#             scas,
-#             mjds,
-#             ra_init,
-#             dec_init,
-#             x_init,
-#             y_init,
-#             ra_fit,
-#             dec_fit,
-#             x_fit,
-#             y_fit,
-#             mags,
-#             magerr,
-#             fluxes,
-#             fluxerrs,
-#             zpts,
-#         ],
-#         names=[
-#             "filter",
-#             "pointing",
-#             "sca",
-#             "mjd",
-#             "ra_init",
-#             "dec_init",
-#             "x_init",
-#             "y_init",
-#             "ra_fit",
-#             "dec_fit",
-#             "x_fit",
-#             "y_fit",
-#             "mag",
-#             "magerr",
-#             "flux",
-#             "fluxerr",
-#             "zpt",
-#         ],
-#     )
-#     savepath = os.path.join(
-#         outputdir, f"data/{oid}/{oid}_{band}_{t_pointing}_{t_sca}_lc.csv"
-#     )
-#     os.makedirs(os.path.dirname(savepath), exist_ok=True)
-#     results.write(savepath, format="csv", overwrite=True)
-
-#     return savepath
-
-# def get_star_truth_coordinates_in_aligned_images(
-#     oid, band, pointing, sca, 
-#     ref_wcs, exptime, area_eff, zpt, nx=4088, ny=4088
-# ):
-#     """
-#     Get coordinates of stars in the aligned image.
-
-#     Uses the truth table from the simulation to get RA, Dec.
-#     Then the WCS from the image to transform to x, y.
-#     """
-#     orig_tab = read_truth_txt(band=band, pointing=pointing, sca=sca)
-#     orig_tab["x"].name, orig_tab["y"].name = "x_orig", "y_orig"
-#     orig_tab["mag"].name = "mag_truth"
-#     orig_tab["mag_truth"] = -2.5 * np.log10(orig_tab["flux"]) + 2.5 * np.log10(exptime * area_eff) + zpt
-#     worldcoords = SkyCoord(ra=orig_tab["ra"] * u.deg, dec=orig_tab["dec"] * u.deg)
-#     x, y = skycoord_to_pixel(worldcoords, ref_wcs)
-
-#     alltab = orig_tab.copy()
-#     alltab["x"] = x
-#     alltab["y"] = y
-
-#     star_idx = np.where(orig_tab["obj_type"] == "star")[0]
-#     sn_idx = np.where(orig_tab["object_id"] == oid)[0]
-#     idx = np.append(star_idx, sn_idx)
-
-#     stars = alltab[idx]
-#     stars = stars[np.logical_and(stars["x"] < 4088, stars["x"] > 0)]
-#     stars = stars[np.logical_and(stars["y"] < 4088, stars["y"] > 0)]
-
-#     return stars
-
 
 # def plot_star_truth_vs_fit_mag(
 #     star_truth_mags, star_fit_mags, zpt, 
@@ -699,26 +471,6 @@ def run(oid,band,n_templates=1,verbose=False):
 
 
 #     return sn_phot
-
-
-
-
-# def run(oid, band, n_templates=1, inputdir=dia_out_dir, outputdir=lc_out_dir):
-
-#     template_list = get_templates(oid,band,infodir,n_templates,verbose=verbose)
-#     science_list = get_science(oid,band,infodir,verbose=verbose)
-#     pairs = list(itertools.product(template_list,science_list))
-
-#     exptime = get_exptime(band)
-#     area_eff = roman.collecting_area
-
-#     for row in template_tab:
-#         t_pointing, t_sca = row['pointing'], row['sca']
-#         lc_filename = make_lc(oid, band, exptime, area_eff, in_tab, t_pointing,t_sca, inputdir=inputdir, outputdir=outputdir)
-#         plot_filename = os.path.join(outputdir, f"figs/{oid}/{oid}_{band}_{t_pointing}_{t_sca}.png")
-#         os.makedirs(os.path.dirname(plot_filename), exist_ok=True)
-#         make_lc_plot(oid, band, start, end, lc_filename)
-
 
 def parse_slurm():
     # SLURM

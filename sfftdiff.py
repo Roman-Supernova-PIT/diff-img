@@ -69,24 +69,30 @@ def sfft(oid,band,
     # Path to template PSF:
     template_psf_path = os.path.join(dia_out_dir,f'psf/rot_psf_{band}_{template_pointing}_{template_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits')
 
+    paths = [sci_conv,template_conv,sci_psf_path,template_psf_path]
+    pathexists = [os.path.exists(p) for p in paths]
+    if all(pathexists):
 
-    diff_savename = f'{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits' # 'diff_' gets prepended to the beginning of this
-    diff, soln = difference(sci_conv,template_conv,
-                            sci_psf_path,template_psf_path,
-                            savename=diff_savename,
-                            backend=backend,cudadevice=cudadevice,
-                            nCPUthreads=1,force=True,logger=logger)
-    if verbose:
-        logger.debug(f'Path to differenced image: \n {diff}')
+        diff_savename = f'{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits' # 'diff_' gets prepended to the beginning of this
+        diff, soln = difference(sci_conv,template_conv,
+                                sci_psf_path,template_psf_path,
+                                savename=diff_savename,
+                                backend=backend,cudadevice=cudadevice,
+                                nCPUthreads=1,force=True,logger=logger)
+        if verbose:
+            logger.debug(f'Path to differenced image: \n {diff}')
 
-    mempool = cp.get_default_memory_pool()
-    pinned_mempool = cp.get_default_pinned_memory_pool()
+        mempool = cp.get_default_memory_pool()
+        pinned_mempool = cp.get_default_pinned_memory_pool()
 
-    print(f'GPU MEMPRINT sfftdiff.sfft(): Memory pool used bytes = {mempool.used_bytes()}')
-    print('Now freeing blocks.')
+        print(f'GPU MEMPRINT sfftdiff.sfft(): Memory pool used bytes = {mempool.used_bytes()}')
+        print('Now freeing blocks.')
 
-    mempool.free_all_blocks()
-    pinned_mempool.free_all_blocks()
+        mempool.free_all_blocks()
+        pinned_mempool.free_all_blocks()
+
+    else:
+        print(f'Preprocessed files for {band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca} do not exist. Skipping.')
 
 def run(oid,band,n_templates=1,verbose=False):
 

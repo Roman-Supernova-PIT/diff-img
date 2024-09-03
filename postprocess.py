@@ -65,58 +65,64 @@ def postprocess(ra,dec,band,pair_info,
     sci_pointing, sci_sca = sci_info['pointing'], sci_info['sca']
     template_pointing, template_sca = template_info['pointing'], template_info['sca']
 
-    # Set up input filepaths for generating the decorrelation kernel.
-    skysub_dir = os.path.join(dia_out_dir,'skysub')
-    sci_skysub_path = os.path.join(skysub_dir,f'skysub_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}.fits')
-    template_skysub_path = os.path.join(skysub_dir,f'skysub_Roman_TDS_simple_model_{band}_{template_pointing}_{template_sca}.fits')
-    
-    psf_dir = os.path.join(dia_out_dir,'psf')
-    sci_psf_path = os.path.join(psf_dir,f'psf_{ra}_{dec}_{band}_{sci_pointing}_{sci_sca}.fits')
-    template_psf_path = os.path.join(psf_dir,f'rot_psf_{band}_{template_pointing}_{template_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits')
-    
+    # First, check that the difference image exists in the first place. 
     subtract_dir = os.path.join(dia_out_dir,'subtract')
     diff_dir = os.path.join(subtract_dir,'difference')
-    soln_dir = os.path.join(subtract_dir,'solution')
-    solnpath = os.path.join(soln_dir,f'solution_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
     diffpath = os.path.join(diff_dir,f'diff_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
+    if os.path.exists(diffpath):
 
-    dcker_savename = f'dcker_{band}_{sci_pointing}_{sci_sca}_-_{template_pointing}_{template_sca}.fits'
+        # Set up input filepaths for generating the decorrelation kernel.
+        skysub_dir = os.path.join(dia_out_dir,'skysub')
+        sci_skysub_path = os.path.join(skysub_dir,f'skysub_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}.fits')
+        template_skysub_path = os.path.join(skysub_dir,f'skysub_Roman_TDS_simple_model_{band}_{template_pointing}_{template_sca}.fits')
+        
+        psf_dir = os.path.join(dia_out_dir,'psf')
+        sci_psf_path = os.path.join(psf_dir,f'psf_{ra}_{dec}_{band}_{sci_pointing}_{sci_sca}.fits')
+        template_psf_path = os.path.join(psf_dir,f'rot_psf_{band}_{template_pointing}_{template_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits')
+        
+        soln_dir = os.path.join(subtract_dir,'solution')
+        solnpath = os.path.join(soln_dir,f'solution_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
+        diffpath = os.path.join(diff_dir,f'diff_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
 
-    # Generate decorrelation kernel.
-    dcker_path = decorr_kernel(sci_skysub_path,template_skysub_path,
-                               sci_psf_path,template_psf_path,
-                               diffpath,solnpath,
-                               savename=dcker_savename)
-    if verbose:
-        logger.debug(f'Path to decorrelation kernel: \n {dcker_path}')
+        dcker_savename = f'dcker_{band}_{sci_pointing}_{sci_sca}_-_{template_pointing}_{template_sca}.fits'
 
-    # Apply decorrelation kernel to images    
-    decorr_imgpath = decorr_img(diffpath,dcker_path)
-    if verbose:
-        logger.debug(f'Path to final decorrelated differenced image: \n {decorr_imgpath}')
+        # Generate decorrelation kernel.
+        dcker_path = decorr_kernel(sci_skysub_path,template_skysub_path,
+                                sci_psf_path,template_psf_path,
+                                diffpath,solnpath,
+                                savename=dcker_savename)
+        if verbose:
+            logger.debug(f'Path to decorrelation kernel: \n {dcker_path}')
 
-    sci_conv = os.path.join(dia_out_dir,f'convolved/conv_sci_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
-    zpt_savename = f'zptimg_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits'
-    zpt_imgpath = decorr_img(sci_conv,dcker_path,savename=zpt_savename)
-    if verbose:
-        logger.debug(f'Path to zeropoint image: \n {zpt_imgpath}')
+        # Apply decorrelation kernel to images    
+        decorr_imgpath = decorr_img(diffpath,dcker_path)
+        if verbose:
+            logger.debug(f'Path to final decorrelated differenced image: \n {decorr_imgpath}')
 
-    # Apply decorrelation kernel to PSF
-    decorr_psf_savename = f'psf_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits'
-    decorr_psfpath = decorr_img(sci_psf_path,dcker_path,savename=decorr_psf_savename)
-    if verbose:
-        logger.debug(f'Path to decorrelated PSF (use for photometry): \n {decorr_psfpath}')
+        sci_conv = os.path.join(dia_out_dir,f'convolved/conv_sci_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
+        zpt_savename = f'zptimg_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits'
+        zpt_imgpath = decorr_img(sci_conv,dcker_path,savename=zpt_savename)
+        if verbose:
+            logger.debug(f'Path to zeropoint image: \n {zpt_imgpath}')
 
-    # Make stamps
-    skysub_stamp_savename = f'stamp_{ra}_{dec}_skysub_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}.fits'
-    skysub_stamp_path = stampmaker(ra,dec,sci_skysub_path,savename=skysub_stamp_savename,shape=np.array([100,100]))
-    if verbose:
-        logger.debug(f'Path to sky-subtracted-only SN stamp: \n {skysub_stamp_path}')
+        # Apply decorrelation kernel to PSF
+        decorr_psf_savename = f'psf_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits'
+        decorr_psfpath = decorr_img(sci_psf_path,dcker_path,savename=decorr_psf_savename)
+        if verbose:
+            logger.debug(f'Path to decorrelated PSF (use for photometry): \n {decorr_psfpath}')
 
-    dd_stamp_savename = f'stamp_{ra}_{dec}_diff_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits'
-    dd_stamp_path = stampmaker(ra,dec,decorr_imgpath,savename=dd_stamp_savename,shape=np.array([100,100]))
-    if verbose:
-        logger.debug(f'Path to final decorrelated differenced SN stamp: \n {dd_stamp_path}')   
+        # Make stamps
+        skysub_stamp_savename = f'stamp_{ra}_{dec}_skysub_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}.fits'
+        skysub_stamp_path = stampmaker(ra,dec,sci_skysub_path,savename=skysub_stamp_savename,shape=np.array([100,100]))
+        if verbose:
+            logger.debug(f'Path to sky-subtracted-only SN stamp: \n {skysub_stamp_path}')
+
+        dd_stamp_savename = f'stamp_{ra}_{dec}_diff_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits'
+        dd_stamp_path = stampmaker(ra,dec,decorr_imgpath,savename=dd_stamp_savename,shape=np.array([100,100]))
+        if verbose:
+            logger.debug(f'Path to final decorrelated differenced SN stamp: \n {dd_stamp_path}')   
+    else:
+        print(f'Difference imaging files for {band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca} do not exist. Skipping.')
 
 def run(oid,band,n_templates=1,verbose=False):
 
