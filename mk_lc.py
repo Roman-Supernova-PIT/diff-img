@@ -25,9 +25,12 @@ from astropy.io import fits
 from astropy.coordinates import SkyCoord
 from astropy.wcs import WCS
 from astropy.wcs.utils import skycoord_to_pixel
-from astropy.table import Table, hstack, unique
+from astropy.table import Table, join, unique
 from astropy.nddata import Cutout2D
 import astropy.units as u
+
+from photutils.psf import IntegratedGaussianPRF
+
 from galsim import roman
 
 # IMPORTS Internal:
@@ -95,7 +98,7 @@ def get_psf(psfpath):
 
     return psf
 
-def get_zpt(zptimg,psf,band,stars):
+def get_zpt(zptimg,psf,band,stars,ap_phot_only=False,zpt_plot=True,oid=None,sci_pointing=None,sci_sca=None):
     """
     Get the zeropoint based on the stars in the convolved, decorrelated science image. 
     """
@@ -104,18 +107,55 @@ def get_zpt(zptimg,psf,band,stars):
     init_params = ap_phot(zptimg, stars)
     final_params = psf_phot(zptimg, psf, init_params)
 
+    print('INIT_PARAMS')
+    print(init_params.colnames)
+    print(init_params)
+    print('FINAL_PARAMS')
+    print(final_params.colnames)
+    print(final_params)
+
     # Do not need to cross match. Can just merge tables because they
     # will be in the same order.
-    photres = hstack([stars, final_params])
+    photres = join(stars,init_params,keys=['object_id','ra','dec','realized_flux','flux_truth','mag_truth','obj_type'])
+    if not ap_phot_only:
+        photres = join(photres,final_params,keys=['id'])
+    print('PHOTRES')
+    print(photres.colnames)
+    print(photres)
 
-    # Get the zero point. 
+    # Get the zero point.
     galsim_vals = get_galsim_values(band)
     star_fit_mags = -2.5 * np.log10(photres['flux_fit'])
+    print('-2.5 * np.log10(photres[flux_truth])')
+    print(-2.5 * np.log10(photres['flux_truth']))
+    print('2.5 * np.log10(galsim_vals[exptime] * galsim_vals[area_eff])')
+    print(2.5 * np.log10(galsim_vals['exptime'] * galsim_vals['area_eff']))
+    print('galsim_vals[gs_zpt]')
+    print(galsim_vals['gs_zpt'])
     star_truth_mags = -2.5 * np.log10(photres['flux_truth']) + 2.5 * np.log10(galsim_vals['exptime'] * galsim_vals['area_eff']) + galsim_vals['gs_zpt']
 
     # Eventually, this should be a S/N cut, not a mag cut. 
     zpt_mask = np.logical_and(star_truth_mags > 20, star_truth_mags < 23)
     zpt = np.nanmedian(star_truth_mags[zpt_mask] - star_fit_mags[zpt_mask])
+
+    if zpt_plot:
+        assert oid is not None, 'If zpt_plot=True, oid must be provided.'
+        assert sci_pointing is not None, 'If zpt_plot=True, sci_pointing must be provided.'
+        assert sci_sca is not None, 'If zpt_plot=True, sci_sca must be provided.'
+
+        savedir = os.path.join(lc_out_dir,f'figs/{oid}/zpt_plots')
+        os.makedirs(savedir, exist_ok=True)
+        savepath = os.path.join(savedir,f'zpt_stars_{band}_{sci_pointing}_{sci_sca}.png')
+
+        plt.figure(figsize=(8,8))
+        yaxis = star_fit_mags + zpt - star_truth_mags
+        
+        plt.plot(star_truth_mags,yaxis,marker='o',linestyle='')
+        plt.axhline(0,linestyle='--',color='k')
+        plt.xlabel('Truth mag')
+        plt.ylabel('Fit mag - zpt + truth mag')
+        plt.title(f'{band} {sci_pointing} {sci_sca}')
+        plt.savefig(savepath,dpi=300,bbox_inches='tight')
 
     return zpt
 
@@ -160,8 +200,9 @@ def make_phot_info_dict(oid, band, pair_info, ap_r=4):
             wcs = WCS(diff_hdu[0].header)
 
         # Load in the decorrelated PSF.
-        psfpath = os.path.join(dia_out_dir, f'decorr/psf_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
-        psf = get_psf(psfpath)
+        # psfpath = os.path.join(dia_out_dir, f'decorr/psf_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
+        # psf = get_psf(psfpath)
+        psf = IntegratedGaussianPRF()
         coord = SkyCoord(ra=ra*u.deg,dec=dec*u.deg)
         pxcoords = skycoord_to_pixel(coord,wcs)
         results_dict = phot_at_coords(diffimg, psf, pxcoords=pxcoords, ap_r=ap_r)
@@ -175,7 +216,7 @@ def make_phot_info_dict(oid, band, pair_info, ap_r=4):
         zptimg_path = os.path.join(dia_out_dir, f'decorr/zptimg_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
         with fits.open(zptimg_path) as hdu:
             zptimg = hdu[0].data
-        zpt = get_zpt(zptimg, psf, band, stars)
+        zpt = get_zpt(zptimg, psf, band, stars, oid=oid, sci_pointing=sci_pointing, sci_sca=sci_sca)
 
         # Add additional info to the results dictionary so it can be merged into a nice file later.
         results_dict['ra'] = ra
