@@ -2,7 +2,9 @@ import os
 import argparse
 import time
 import tracemalloc
-from phrosty.utils import get_object_instances, get_transient_radec
+import requests
+import pandas as pd
+from phrosty.utils import get_transient_radec
 
 infodir = os.getenv('SN_INFO_DIR', None)
 assert infodir is not None, 'You need to set SN_INFO_DIR as an environment variable.'
@@ -18,14 +20,22 @@ def make_object_table(oid):
     start_time = time.time()
 
     ra,dec = get_transient_radec(oid)
-    objs = get_object_instances(ra=ra, dec=dec)
+    
+    server_url = 'https://roman-desc-simdex.lbl.gov'
+    req = requests.Session()
+    result = req.post(f'{server_url}/findromanimages/containing=({ra},{dec})')
+    if result.status_code != 200:
+        raise RuntimeError(f"Got status code {result.status_code}\n{result.text}")
+    
+    objs = pd.DataFrame(result.json())[['filter','pointing','sca']]
+
     oid = str(oid)
     savedir = os.path.join(infodir,oid)
     if not os.path.exists(savedir):
         os.mkdir(savedir)
     savepath = os.path.join(savedir,f'{oid}_instances.csv')
     if not os.path.exists(savepath):
-        objs.write(savepath, format='csv', overwrite=True)
+        objs.to_csv(savepath, sep=',', index=False)
     else:
         print(f'{savepath} exists. Skipping this step.')
 
