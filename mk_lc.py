@@ -25,7 +25,7 @@ from astropy.io import fits
 from astropy.coordinates import SkyCoord
 from astropy.wcs import WCS
 from astropy.wcs.utils import skycoord_to_pixel
-from astropy.table import Table, join, unique
+from astropy.table import Table, join, unique, vstack
 from astropy.nddata import Cutout2D
 import astropy.units as u
 
@@ -81,6 +81,10 @@ def get_stars(truthpath,nx=4088,ny=4088,transform=False,wcs=None):
         truth_tab['x'] = x
         truth_tab['y'] = y
 
+    if not transform:
+        truth_tab['x'] -= 1
+        truth_tab['y'] -= 1
+
     idx = np.where(truth_tab['obj_type'] == 'star')[0]
     stars = truth_tab[idx]
     stars = stars[np.logical_and(stars["x"] < nx, stars["x"] > 0)]
@@ -98,41 +102,25 @@ def get_psf(psfpath):
 
     return psf
 
-def get_zpt(zptimg,psf,band,stars,ap_phot_only=False,zpt_plot=True,oid=None,sci_pointing=None,sci_sca=None):
+def get_zpt(zptimg,psf,band,stars,ap_r=4,ap_phot_only=False,zpt_plot=True,oid=None,sci_pointing=None,sci_sca=None):
     """
-    Get the zeropoint based on the stars in the convolved, decorrelated science image. 
+    Get the zeropoint based on the stars. 
     """
 
     # First, need to do photometry on the stars.
-    init_params = ap_phot(zptimg, stars)
-    final_params = psf_phot(zptimg, psf, init_params)
-
-    print('INIT_PARAMS')
-    print(init_params.colnames)
-    print(init_params)
-    print('FINAL_PARAMS')
-    print(final_params.colnames)
-    print(final_params)
+    init_params = ap_phot(zptimg, stars, ap_r=ap_r)
+    final_params = psf_phot(zptimg, psf, init_params, forced_phot=True)
 
     # Do not need to cross match. Can just merge tables because they
     # will be in the same order.
     photres = join(stars,init_params,keys=['object_id','ra','dec','realized_flux','flux_truth','mag_truth','obj_type'])
     if not ap_phot_only:
         photres = join(photres,final_params,keys=['id'])
-    print('PHOTRES')
-    print(photres.colnames)
-    print(photres)
 
     # Get the zero point.
     galsim_vals = get_galsim_values(band)
     star_fit_mags = -2.5 * np.log10(photres['flux_fit'])
-    print('-2.5 * np.log10(photres[flux_truth])')
-    print(-2.5 * np.log10(photres['flux_truth']))
-    print('2.5 * np.log10(galsim_vals[exptime] * galsim_vals[area_eff])')
-    print(2.5 * np.log10(galsim_vals['exptime'] * galsim_vals['area_eff']))
-    print('galsim_vals[gs_zpt]')
-    print(galsim_vals['gs_zpt'])
-    star_truth_mags = -2.5 * np.log10(photres['flux_truth']) + 2.5 * np.log10(galsim_vals['exptime'] * galsim_vals['area_eff']) + galsim_vals['gs_zpt']
+    star_truth_mags = - 2.5 * np.log10(photres['flux_truth']) + galsim_vals['gs_zpt'] + 2.5 * np.log10(galsim_vals['exptime'] * galsim_vals['area_eff'])
 
     # Eventually, this should be a S/N cut, not a mag cut. 
     zpt_mask = np.logical_and(star_truth_mags > 20, star_truth_mags < 23)
@@ -156,6 +144,14 @@ def get_zpt(zptimg,psf,band,stars,ap_phot_only=False,zpt_plot=True,oid=None,sci_
         plt.ylabel('Fit mag - zpt + truth mag')
         plt.title(f'{band} {sci_pointing} {sci_sca}')
         plt.savefig(savepath,dpi=300,bbox_inches='tight')
+        plt.close()
+
+        savepath = os.path.join(savedir,f'hist_truth-fit_{band}_{sci_pointing}_{sci_sca}.png')
+        plt.hist(star_truth_mags[zpt_mask] - star_fit_mags[zpt_mask])
+        plt.title(f'{band} {sci_pointing} {sci_sca}')
+        plt.xlabel('star_truth_mags[zpt_mask] - star_fit_mags[zpt_mask]')
+        plt.savefig(savepath,dpi=300,bbox_inches='tight')
+        plt.close()
 
     return zpt
 
@@ -180,6 +176,10 @@ def phot_at_coords(img, psf, pxcoords=(50, 50), ap_r=4):
                     'mag_fit_err': mag_err
                     }
 
+    print('RESULTS_DICT flux_fit')
+    print('flux_fit')
+    print(flux)
+
     return results_dict
 
 def make_phot_info_dict(oid, band, pair_info, ap_r=4):
@@ -191,8 +191,7 @@ def make_phot_info_dict(oid, band, pair_info, ap_r=4):
     mjd = get_mjd(sci_pointing)
 
     # Make sure there's a difference image stamp to do photometry on.
-    diff_img_stamp_path = os.path.join(dia_out_dir, f'stamps/stamp_{ra}_{dec}_diff_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
-
+    diff_img_stamp_path = os.path.join(dia_out_dir, f'stamps/stamp_{ra}_{dec}_decorr_diff_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
     if os.path.exists(diff_img_stamp_path):
         # Load in the difference image stamp.
         with fits.open(diff_img_stamp_path) as diff_hdu:
@@ -200,15 +199,15 @@ def make_phot_info_dict(oid, band, pair_info, ap_r=4):
             wcs = WCS(diff_hdu[0].header)
 
         # Load in the decorrelated PSF.
-        # psfpath = os.path.join(dia_out_dir, f'decorr/psf_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
-        # psf = get_psf(psfpath)
-        psf = IntegratedGaussianPRF()
+        psfpath = os.path.join(dia_out_dir, f'decorr/psf_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
+        psf = get_psf(psfpath)
         coord = SkyCoord(ra=ra*u.deg,dec=dec*u.deg)
         pxcoords = skycoord_to_pixel(coord,wcs)
         results_dict = phot_at_coords(diffimg, psf, pxcoords=pxcoords, ap_r=ap_r)
 
         # Get the zero point from the decorrelated, convolved science image.
         # First, get the table of known stars.
+
         truthpath = os.path.join(simsdir, f'RomanTDS/truth/{band}/{sci_pointing}/Roman_TDS_index_{band}_{sci_pointing}_{sci_sca}.txt')
         stars = get_stars(truthpath)
 

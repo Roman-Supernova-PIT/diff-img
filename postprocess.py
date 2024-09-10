@@ -84,13 +84,13 @@ def postprocess(ra,dec,band,pair_info,
         solnpath = os.path.join(soln_dir,f'solution_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
         diffpath = os.path.join(diff_dir,f'diff_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
 
-        dcker_savename = f'dcker_{band}_{sci_pointing}_{sci_sca}_-_{template_pointing}_{template_sca}.fits'
+        dcker_savename = f'dcker_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits'
 
         # Generate decorrelation kernel.
         dcker_path = decorr_kernel(sci_skysub_path,template_skysub_path,
-                                sci_psf_path,template_psf_path,
-                                diffpath,solnpath,
-                                savename=dcker_savename)
+                                   sci_psf_path,template_psf_path,
+                                   diffpath,solnpath,
+                                   savename=dcker_savename)
         if verbose:
             logger.debug(f'Path to decorrelation kernel: \n {dcker_path}')
 
@@ -117,10 +117,20 @@ def postprocess(ra,dec,band,pair_info,
         if verbose:
             logger.debug(f'Path to sky-subtracted-only SN stamp: \n {skysub_stamp_path}')
 
-        dd_stamp_savename = f'stamp_{ra}_{dec}_diff_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits'
+        decorr_zptimg_savename = f'stamp_{ra}_{dec}_decorr_zptimg_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}.fits'
+        decorr_zptimg_stamp = stampmaker(ra,dec,zpt_imgpath,savename=decorr_zptimg_savename,shape=np.array([100,100]))
+        if verbose:
+            logger.debug(f'Path to sky-subtracted-only SN stamp: \n {skysub_stamp_path}')
+
+        d_stamp_savename = f'stamp_{ra}_{dec}_decorr_diff_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits'
+        d_stamp_path = stampmaker(ra,dec,diffpath,savename=d_stamp_savename,shape=np.array([100,100]))
+        if verbose:
+            logger.debug(f'Path to differenced SN stamp: \n {d_stamp_path}')
+
+        dd_stamp_savename = f'stamp_{ra}_{dec}_decorr_diff_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits'
         dd_stamp_path = stampmaker(ra,dec,decorr_imgpath,savename=dd_stamp_savename,shape=np.array([100,100]))
         if verbose:
-            logger.debug(f'Path to final decorrelated differenced SN stamp: \n {dd_stamp_path}')   
+            logger.debug(f'Path to final decorrelated differenced SN stamp: \n {dd_stamp_path}')
     else:
         print(f'Difference imaging files for {band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca} do not exist. Skipping.')
 

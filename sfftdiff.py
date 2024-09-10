@@ -75,7 +75,6 @@ def sfft(oid,band,
 
         diff_savename = f'{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits' # 'diff_' gets prepended to the beginning of this
         diff, soln = difference(sci_conv,template_conv,
-                                sci_psf_path,template_psf_path,
                                 savename=diff_savename,
                                 backend=backend,cudadevice=cudadevice,
                                 nCPUthreads=1,force=True,logger=logger)

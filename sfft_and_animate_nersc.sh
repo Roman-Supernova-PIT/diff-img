@@ -2,7 +2,7 @@
 
 #SBATCH -A m4385
 #SBATCH -C gpu
-#SBATCH -q debug # regular or debug
+#SBATCH -q regular # regular or debug
 #SBATCH --job-name=sfft
 ##SBATCH --mem=64G # Comment this out while on -q debug because you get a whole node, so you can monitor with top to see how much you're using. 
 #SBATCH --ntasks=1 # Leave as 1 because the tasks are divided in python. 
@@ -12,9 +12,9 @@
 #SBATCH --mail-type=ALL
 #SBATCH --gpus-per-task 1
 #SBATCH --cpus-per-task 1
-##SBATCH --time=2:00:00 # regular QOS
-#SBATCH --time=30:00 # debug QOS
-#SBATCH --array=5
+#SBATCH --time=2:00:00 # regular QOS
+##SBATCH --time=30:00 # debug QOS
+#SBATCH --array=1-7
 
 # Activate conda environment
 source ~/.bashrc
@@ -40,7 +40,6 @@ export LC_OUT_DIR="/global/cfs/cdirs/m4385/users/lauren/lcs" # Parent folder of 
 # Run program. 
 sne=( '20172782' )
 # sne=( '20172117' '20172782' '20173305' '20174023' '20174118' '20174370' '20175077' '20177380' '20172328' '20173301' '20173373' '20174108' '20174213' '20174542' '20175568' '20202893' )
-# sne=( '20175077' '20177380' '20172328' '20173301' '20173373' '20174108' '20174213' '20174542' '20175568' '20202893' )
 
 for sn in "${sne[@]}"
 do
