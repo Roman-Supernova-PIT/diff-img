@@ -6,6 +6,9 @@ from astropy.io import fits
 from math import ceil, floor
 from astropy.wcs import WCS, FITSFixedWarning
 
+__last_update__ = "2024-09-11"
+__author__ = "Lei Hu <leihu@andrew.cmu.edu>"
+
 class Cuda_Resampling:
     @staticmethod
     def CR(FITS_obj, FITS_targ, FITS_resamp, METHOD="LANCZOS3", FILL_ZEROPIX=True, VERBOSE_LEVEL=2):
