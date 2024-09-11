@@ -10,8 +10,8 @@ import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 from scipy.interpolate import interp1d
 
-# Make numpy stop thread hogging. 
-# I don't think I need this if I have it in the batch file, right? 
+# Make numpy stop thread hogging.
+# I don't think I need this if I have it in the batch file, right?
 os.environ['OPENBLAS_NUM_THREADS'] = '1'
 os.environ['MKL_NUM_THREADS'] = '1'
 os.environ['NUMEXPR_NUM_THREADS'] = '1'
@@ -67,7 +67,7 @@ def get_stars(truthpath,nx=4088,ny=4088,transform=False,wcs=None):
     """
     Get the stars in the science images.
 
-    Optional to transform to another WCS. 
+    Optional to transform to another WCS.
     """
     truth_tab = read_truth_txt(path=truthpath)
     truth_tab['mag'].name = 'mag_truth'
@@ -104,7 +104,7 @@ def get_psf(psfpath):
 
 def get_zpt(zptimg,psf,band,stars,ap_r=4,ap_phot_only=False,zpt_plot=True,oid=None,sci_pointing=None,sci_sca=None):
     """
-    Get the zeropoint based on the stars. 
+    Get the zeropoint based on the stars.
     """
 
     # First, need to do photometry on the stars.
@@ -122,7 +122,7 @@ def get_zpt(zptimg,psf,band,stars,ap_r=4,ap_phot_only=False,zpt_plot=True,oid=No
     star_fit_mags = -2.5 * np.log10(photres['flux_fit'])
     star_truth_mags = - 2.5 * np.log10(photres['flux_truth']) + galsim_vals['gs_zpt'] + 2.5 * np.log10(galsim_vals['exptime'] * galsim_vals['area_eff'])
 
-    # Eventually, this should be a S/N cut, not a mag cut. 
+    # Eventually, this should be a S/N cut, not a mag cut.
     zpt_mask = np.logical_and(star_truth_mags > 20, star_truth_mags < 23)
     zpt = np.nanmedian(star_truth_mags[zpt_mask] - star_fit_mags[zpt_mask])
 
@@ -137,7 +137,7 @@ def get_zpt(zptimg,psf,band,stars,ap_r=4,ap_phot_only=False,zpt_plot=True,oid=No
 
         plt.figure(figsize=(8,8))
         yaxis = star_fit_mags + zpt - star_truth_mags
-        
+
         plt.plot(star_truth_mags,yaxis,marker='o',linestyle='')
         plt.axhline(0,linestyle='--',color='k')
         plt.xlabel('Truth mag')
@@ -157,7 +157,7 @@ def get_zpt(zptimg,psf,band,stars,ap_r=4,ap_phot_only=False,zpt_plot=True,oid=No
 
 def phot_at_coords(img, psf, pxcoords=(50, 50), ap_r=4):
     """
-    Do photometry at forced set of pixel coordinates. 
+    Do photometry at forced set of pixel coordinates.
     """
 
     forcecoords = Table([[float(pxcoords[0])], [float(pxcoords[1])]], names=["x", "y"])
@@ -211,7 +211,7 @@ def make_phot_info_dict(oid, band, pair_info, ap_r=4):
         truthpath = os.path.join(simsdir, f'RomanTDS/truth/{band}/{sci_pointing}/Roman_TDS_index_{band}_{sci_pointing}_{sci_sca}.txt')
         stars = get_stars(truthpath)
 
-        # Now, calculate the zero point based on those stars. 
+        # Now, calculate the zero point based on those stars.
         zptimg_path = os.path.join(dia_out_dir, f'decorr/zptimg_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
         with fits.open(zptimg_path) as hdu:
             zptimg = hdu[0].data
@@ -339,14 +339,13 @@ def split_table(oid, band, tab, template_info):
 
     return savepath
 
-def run(oid,band,n_templates=1,verbose=False):
+def run(oid, band, n_templates=1, cpus_per_task=1, verbose=False):
     template_list = get_templates(oid,band,infodir,n_templates,verbose=verbose)
     science_list = get_science(oid,band,infodir,verbose=verbose)
     pairs = list(itertools.product(template_list,science_list))
 
     partial_make_phot_info_dict = partial(make_phot_info_dict,oid,band)
 
-    cpus_per_task = int(os.environ['SLURM_CPUS_PER_TASK'])
     with Manager() as mgr:
         mgr_pairs = mgr.list(pairs)
         with Pool(cpus_per_task) as pool:
@@ -381,9 +380,9 @@ def run(oid,band,n_templates=1,verbose=False):
 
 
 # def plot_star_truth_vs_fit_mag(
-#     star_truth_mags, star_fit_mags, zpt, 
-#     band, pointing, sca, 
-#     plot_filename=os.path.join(lc_out_dir,"figs/zpt.png"), 
+#     star_truth_mags, star_fit_mags, zpt,
+#     band, pointing, sca,
+#     plot_filename=os.path.join(lc_out_dir,"figs/zpt.png"),
 #     figsize=(6, 6)
 # ):
 #     """
@@ -548,6 +547,13 @@ def parse_and_run():
     )
 
     parser.add_argument(
+        '--cpus-per-task',
+        type=int,
+        default=None,
+        help="Number of CPUs for each multiprocessing pool task"
+    )
+
+    parser.add_argument(
         '--verbose',
         type=bool,
         default=False,
@@ -570,7 +576,12 @@ def parse_and_run():
         print("Must specify either '--band' xor ('--slurm_array' and have SLURM_ARRAY_TASK_ID defined).")
         sys.exit()
 
-    run(args.oid, args.band, args.n_templates, args.verbose)
+    cpus_per_task = args.cpus_per_task
+    if cpus_per_task is None:
+        # TODO : default when no slurm
+        cpus_per_task = int(os.environ['SLURM_CPUS_PER_TASK'])
+
+    run(args.oid, args.band, n_templates=args.n_templates, cpus_per_task=cpus_per_task, verbose=args.verbose)
     print("Finished making LCs!")
 
 

@@ -10,8 +10,8 @@ import sys
 import re
 import time
 
-# Make numpy stop thread hogging. 
-# I don't think I need this if I have it in the batch file, right? 
+# Make numpy stop thread hogging.
+# I don't think I need this if I have it in the batch file, right?
 os.environ['OPENBLAS_NUM_THREADS'] = '1'
 os.environ['MKL_NUM_THREADS'] = '1'
 os.environ['NUMEXPR_NUM_THREADS'] = '1'
@@ -30,7 +30,7 @@ from phrosty.imagesubtraction import decorr_kernel, decorr_img, stampmaker
 from phrosty.utils import get_transient_info, transient_in_or_out, set_logger, get_templates, get_science
 
 ###########################################################################
-# Get environment variables. 
+# Get environment variables.
 
 infodir = os.getenv('SN_INFO_DIR', None)
 assert infodir is not None, 'You need to set SN_INFO_DIR as an environment variable.'
@@ -48,7 +48,7 @@ def postprocess(ra,dec,band,pair_info,
 
     ###########################################################################
 
-    # Get process name. 
+    # Get process name.
     me = current_process()
     match = re.search( '([0-9]+)', me.name)
     if match is not None:
@@ -65,7 +65,7 @@ def postprocess(ra,dec,band,pair_info,
     sci_pointing, sci_sca = sci_info['pointing'], sci_info['sca']
     template_pointing, template_sca = template_info['pointing'], template_info['sca']
 
-    # First, check that the difference image exists in the first place. 
+    # First, check that the difference image exists in the first place.
     subtract_dir = os.path.join(dia_out_dir,'subtract')
     diff_dir = os.path.join(subtract_dir,'difference')
     diffpath = os.path.join(diff_dir,f'diff_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
@@ -75,11 +75,11 @@ def postprocess(ra,dec,band,pair_info,
         skysub_dir = os.path.join(dia_out_dir,'skysub')
         sci_skysub_path = os.path.join(skysub_dir,f'skysub_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}.fits')
         template_skysub_path = os.path.join(skysub_dir,f'skysub_Roman_TDS_simple_model_{band}_{template_pointing}_{template_sca}.fits')
-        
+
         psf_dir = os.path.join(dia_out_dir,'psf')
         sci_psf_path = os.path.join(psf_dir,f'psf_{ra}_{dec}_{band}_{sci_pointing}_{sci_sca}.fits')
         template_psf_path = os.path.join(psf_dir,f'rot_psf_{band}_{template_pointing}_{template_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits')
-        
+
         soln_dir = os.path.join(subtract_dir,'solution')
         solnpath = os.path.join(soln_dir,f'solution_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
         diffpath = os.path.join(diff_dir,f'diff_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
@@ -94,7 +94,7 @@ def postprocess(ra,dec,band,pair_info,
         if verbose:
             logger.debug(f'Path to decorrelation kernel: \n {dcker_path}')
 
-        # Apply decorrelation kernel to images    
+        # Apply decorrelation kernel to images
         decorr_imgpath = decorr_img(diffpath,dcker_path)
         if verbose:
             logger.debug(f'Path to final decorrelated differenced image: \n {decorr_imgpath}')
@@ -134,11 +134,11 @@ def postprocess(ra,dec,band,pair_info,
     else:
         print(f'Difference imaging files for {band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca} do not exist. Skipping.')
 
-def run(oid,band,n_templates=1,verbose=False):
+def run(oid, band, n_templates=1, cpus_per_task=1, verbose=False):
 
     ###########################################################################
 
-    # Start tracemalloc. 
+    # Start tracemalloc.
     tracemalloc.start()
 
     ###########################################################################
@@ -154,7 +154,6 @@ def run(oid,band,n_templates=1,verbose=False):
     pairs = list(itertools.product(template_list,science_list))
 
     partial_postprocess = partial(postprocess,ra,dec,band,verbose=verbose)
-    cpus_per_task = int(os.environ['SLURM_CPUS_PER_TASK'])
 
     with Manager() as mgr:
         mgr_pairs = mgr.list(pairs)
@@ -166,7 +165,7 @@ def run(oid,band,n_templates=1,verbose=False):
     if verbose:
         print('\n ******************************************************** \n Decorrelation kernel generated, applied to images and PSFs, and stamps generated. \n  ******************************************************** \n')
         print(f'RUNTIMEPRINT postprocess.py: {time.time()-start_time}')
-        
+
     ###################################################################
     # Print tracemalloc.
     current, peak = tracemalloc.get_traced_memory()
@@ -176,7 +175,7 @@ def run(oid,band,n_templates=1,verbose=False):
 
 def parse_slurm():
     """
-    Turn a SLURM array ID into a band. 
+    Turn a SLURM array ID into a band.
     """
     sys.path.append(os.getcwd())
     taskID = int(os.environ["SLURM_ARRAY_TASK_ID"])
@@ -197,8 +196,8 @@ def parse_and_run():
     )
 
     parser.add_argument(
-        'oid', 
-        type=int, 
+        'oid',
+        type=int,
         help='ID of transient. Used to look up information on transient.'
     )
 
@@ -214,6 +213,13 @@ def parse_and_run():
         "--n-templates",
         type=int,
         help='Number of template images to use.'
+    )
+
+    parser.add_argument(
+        '--cpus-per-task',
+        type=int,
+        default=None,
+        help="Number of CPUs for each multiprocessing pool task"
     )
 
     parser.add_argument(
@@ -239,7 +245,12 @@ def parse_and_run():
         print("Must specify either '--band' xor ('--slurm_array' and have SLURM_ARRAY_TASK_ID defined).")
         sys.exit()
 
-    run(args.oid, args.band, args.n_templates, args.verbose)
+    cpus_per_task = args.cpus_per_task
+    if cpus_per_task is None:
+        # TODO : default when no slurm
+        cpus_per_task = int(os.environ['SLURM_CPUS_PER_TASK'])
+
+    run(args.oid, args.band, n_templates=args.n_templates, cpus_per_task=cpus_per_task, verbose=args.verbose)
     print("Finished with postprocess.py!")
 
 if __name__ == '__main__':
