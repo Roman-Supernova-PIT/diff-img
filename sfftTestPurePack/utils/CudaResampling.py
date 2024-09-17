@@ -6,12 +6,19 @@ from astropy.io import fits
 from math import ceil, floor
 from astropy.wcs import WCS, FITSFixedWarning
 
-__last_update__ = "2024-09-11"
+__last_update__ = "2024-09-13"
 __author__ = "Lei Hu <leihu@andrew.cmu.edu>"
 
 class Cuda_Resampling:
-    @staticmethod
-    def CR(FITS_obj, FITS_targ, FITS_resamp, METHOD="LANCZOS3", FILL_ZEROPIX=True, VERBOSE_LEVEL=2):
+    def __init__(self, FITS_obj, FITS_targ, METHOD="BILINEAR", VERBOSE_LEVEL=2):
+        
+        self.FITS_obj = FITS_obj
+        self.FITS_targ = FITS_targ
+
+        self.METHOD = METHOD
+        self.VERBOSE_LEVEL = VERBOSE_LEVEL
+
+    def mapping(self):
 
         def Read_WCS(hdr, VERBOSE_LEVEL=2):
             with warnings.catch_warnings():
@@ -27,14 +34,12 @@ class Cuda_Resampling:
                 w = WCS(_hdr)
             return w
 
-        PixA_obj = fits.getdata(FITS_obj, ext=0).T
-        PixA_targ = fits.getdata(FITS_targ, ext=0).T
+        PixA_obj = fits.getdata(self.FITS_obj, ext=0).T
+        hdr_obj = fits.getheader(self.FITS_obj, ext=0)
+        hdr_targ = fits.getheader(self.FITS_targ, ext=0)
 
-        hdr_obj = fits.getheader(FITS_obj, ext=0)
-        hdr_targ = fits.getheader(FITS_targ, ext=0)
-
-        w_obj = Read_WCS(hdr=hdr_obj, VERBOSE_LEVEL=VERBOSE_LEVEL)
-        w_targ = Read_WCS(hdr=hdr_targ, VERBOSE_LEVEL=VERBOSE_LEVEL)
+        w_obj = Read_WCS(hdr=hdr_obj, VERBOSE_LEVEL=self.VERBOSE_LEVEL)
+        w_targ = Read_WCS(hdr=hdr_targ, VERBOSE_LEVEL=self.VERBOSE_LEVEL)
 
         # * maaping target pixel centers to the object frame
         #   todo: not fast
@@ -52,10 +57,10 @@ class Cuda_Resampling:
         YY_proj = XY_proj[:, 1].reshape((NTX, NTY))
 
         # * padding the object frame
-        if METHOD == 'BILINEAR':
+        if self.METHOD == 'BILINEAR':
             KERHW = (1, 1)
 
-        if METHOD == 'LANCZOS3':
+        if self.METHOD == 'LANCZOS3':
             KERHW = (3, 3)
             
         NOX = int(hdr_obj["NAXIS1"]) 
@@ -93,6 +98,32 @@ class Cuda_Resampling:
         assert RMIN_E >= 0 and CMIN_E >= 0 
         assert RMAX_E < NEOX and CMAX_E < NEOY
 
+        MappingDICT = {}
+        MappingDICT['XX_Eproj'] = XX_Eproj
+        MappingDICT['YY_Eproj'] = YY_Eproj
+        
+        MappingDICT['NOX'] = NOX
+        MappingDICT['NOY'] = NOY
+
+        MappingDICT['NEOX'] = NEOX
+        MappingDICT['NEOY'] = NEOY
+
+        MappingDICT['NTX'] = NTX
+        MappingDICT['NTY'] = NTY
+
+        return PixA_Eobj, MappingDICT
+
+    def resampling(self, PixA_Eobj, MappingDICT):
+
+        XX_Eproj = MappingDICT['XX_Eproj']
+        YY_Eproj = MappingDICT['YY_Eproj']
+        
+        NEOX = MappingDICT['NEOX']
+        NEOY = MappingDICT['NEOY']
+
+        NTX = MappingDICT['NTX']
+        NTY = MappingDICT['NTY']
+
         # * Cupy configuration
         MaxThreadPerB = 8
         GPUManage = lambda NT: ((NT-1)//MaxThreadPerB + 1, min(NT, MaxThreadPerB))
@@ -117,7 +148,7 @@ class Cuda_Resampling:
 
         PixA_resamp_GPU = cp.zeros((NTX, NTY), dtype=np.float64)
 
-        if METHOD == "BILINEAR":
+        if self.METHOD == "BILINEAR":
         
             # * perform bilinear resampling using CUDA
             # input: PixA_Eobj | (NEOX, NEOY)
@@ -166,10 +197,10 @@ class Cuda_Resampling:
             
             t0 = time.time()
             resamp_func(args=(XX_Eproj_GPU, YY_Eproj_GPU, PixA_Eobj_GPU, PixA_resamp_GPU), block=TpB_PIX, grid=BpG_PIX)
-            if VERBOSE_LEVEL in [1, 2]:
+            if self.VERBOSE_LEVEL in [1, 2]:
                 print('MeLOn CheckPoint: Cuda resampling takes [%.6f s]' %(time.time() - t0))
             
-        if METHOD == "LANCZOS3":
+        if self.METHOD == "LANCZOS3":
             
             # * perform LANCZOS-3 resampling using CUDA
             # input: XX_Eproj, YY_Eproj | (NTX, NTY)
@@ -279,18 +310,9 @@ class Cuda_Resampling:
             LKERNEL_Y_GPU = cp.zeros((6, NTX, NTY), dtype=np.float64)
             weightkernel_func(args=(XX_Eproj_GPU, YY_Eproj_GPU, LKERNEL_X_GPU, LKERNEL_Y_GPU), block=TpB_PIX, grid=BpG_PIX)
             resamp_func(args=(XX_Eproj_GPU, YY_Eproj_GPU, LKERNEL_X_GPU, LKERNEL_Y_GPU, PixA_Eobj_GPU, PixA_resamp_GPU), block=TpB_PIX, grid=BpG_PIX)
-            if VERBOSE_LEVEL in [1, 2]:
+            if self.VERBOSE_LEVEL in [1, 2]:
                 print('MeLOn CheckPoint: Cuda resampling takes [%.6f s]' %(time.time() - t0))
 
         # save the resampled image
         PixA_resamp = cp.asnumpy(PixA_resamp_GPU)
-
-        # todo: refine the pixel filling
-        PixA_resamp[PixA_resamp == 0.] = np.nan
-        with fits.open(FITS_targ) as hdl:
-            hdl[0].data[:, :] = PixA_resamp.T
-            hdl.writeto(FITS_resamp, overwrite=True)
-        if VERBOSE_LEVEL in [1, 2]:
-            print('MeLOn CheckPoint: resampled fits file saved at \n # [%s]' %(FITS_resamp))
-
         return PixA_resamp
