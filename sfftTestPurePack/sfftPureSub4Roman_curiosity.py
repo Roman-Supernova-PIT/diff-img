@@ -546,3 +546,9 @@ print('************ Start NVTX! ************')
 WorkFlow_NVTX(refname=refname, sciname=sciname, input_dir=input_dir, 
     output_dir=output_dir, aux_dir=aux_dir, config_file=config_file)
 print('************ End NVTX! ************')
+
+"""
+# command to profile the workflow using Nvidia Nsight Systems
+nsys profile --trace-fork-before-exec=true --python-backtrace=cuda --python-sampling=true --trace=cuda,nvtx,cublas,cusparse,cudnn,cudla,cusolver,opengl,openacc,openmp,osrt,mpi,nvvideo,vulkan,python-gil python sfftPureSub4Roman.py
+
+"""
