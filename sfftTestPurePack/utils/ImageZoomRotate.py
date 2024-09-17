@@ -1,318 +1,187 @@
-import time
-import warnings
-import cupy as cp
+import os
+import math
 import numpy as np
 from astropy.io import fits
-from math import ceil, floor
-from astropy.wcs import WCS, FITSFixedWarning
+from astropy.wcs import WCS
+from tempfile import mkdtemp
+from CudaResampling import Cuda_Resampling
 
-__last_update__ = "2024-09-13"
+__last_update__ = "2024-09-17"
 __author__ = "Lei Hu <leihu@andrew.cmu.edu>"
 
-class Cuda_Resampling:
-    def __init__(self, FITS_obj, FITS_targ, METHOD="BILINEAR", VERBOSE_LEVEL=2):
+class Image_ZoomRotate:
+    @staticmethod
+    def IZR(PixA_obj, ZOOM_SCALE_X=1.0, ZOOM_SCALE_Y=1.0, OUTSIZE_PARIRY_X='UNCHANGED', OUTSIZE_PARIRY_Y='UNCHANGED', \
+        PATTERN_ROTATE_ANGLE=0.0, RESAMPLING_TYPE='LANCZOS3', FILL_VALUE=0.0, VERBOSE_LEVEL=2):
         
-        self.FITS_obj = FITS_obj
-        self.FITS_targ = FITS_targ
+        """
+        # Remarks on Image Zoom & Rotate
+        # [1] In this function, 'Zoom' means to change the spatial resolution (pixel size) of given image.
+        #     That is to say, we would like to resample the original image on a new grid with different resolution.
+        #     The arguments -ZOOM_SCALE_X and -ZOOM_SCALE_Y control the resacle factor of pixel size.
+        #     E.g., ZOOM_SCALE_X = 1.2 means new pixel is 1.2 times larger than the original pixel along the X axis.
+        #
+        # [2] Throughout the image Zoom, the position of image center is always pinned.
+        #     The Zoomed image frame has the smallest area which can fully cover the original frame.
+        #     NOTE: the image Zoom would not alert the even/odd property of image size.
+        # 
+        # [3] This function also allows for an additional pattern rotation about the pinned image center.
+        #     The argument -PATTERN_ROTATE_ANGLE is the rotate angle (counterclockwise, in deg).
+        # 
+        # [4] Given that the function is commonly used to manipulate PSF model, 
+        #     here we set LANCZOS4 as default resampling method following PSFEx.
+        #
+        """
 
-        self.METHOD = METHOD
-        self.VERBOSE_LEVEL = VERBOSE_LEVEL
+        # check inputs
+        assert ZOOM_SCALE_X > 0.0
+        assert ZOOM_SCALE_Y > 0.0
+        assert 0.0 <= PATTERN_ROTATE_ANGLE < 360.0
 
-    def mapping(self):
+        # create temporary directory
+        TDIR = mkdtemp(suffix=None, prefix=None, dir=None)
 
-        def Read_WCS(hdr, VERBOSE_LEVEL=2):
-            with warnings.catch_warnings():
-                if VERBOSE_LEVEL in [0, 1]: behavior = 'ignore'
-                if VERBOSE_LEVEL in [2]: behavior = 'default'
-                warnings.filterwarnings(behavior, category=FITSFixedWarning)
+        # * create a header with initialized wcs for the original image
+        NAXIS1_ORI, NAXIS2_ORI = PixA_obj.shape                           # image original size
+        CRPIX1_ORI, CRPIX2_ORI = 0.5+NAXIS1_ORI/2.0, 0.5+NAXIS2_ORI/2.0   # reference point at image center 
+        CRVAL1_ORI, CRVAL2_ORI = 180.0, 0.0                               # trivial skycoord of the reference point
+        CD1_1_ORI, CD1_2_ORI = 1.0/3600, 0.0                              # trivial pixel scale of the original image
+        CD2_1_ORI, CD2_2_ORI = 0.0, 1.0/3600                              # trivial pixel scale of the original image
 
-                if hdr['CTYPE1'] == 'RA---TAN' and 'PV1_0' in hdr:
-                    _hdr = hdr.copy()
-                    _hdr['CTYPE1'] = 'RA---TPV'
-                    _hdr['CTYPE2'] = 'DEC--TPV'
-                else: _hdr = hdr
-                w = WCS(_hdr)
-            return w
+        wcsinfo_ORI = {'NAXIS': 2,
+                       'NAXIS1': NAXIS1_ORI, 'NAXIS2': NAXIS2_ORI,
+                       'CRPIX1': CRPIX1_ORI, 'CRPIX2': CRPIX2_ORI,
+                       'CRVAL1': CRVAL1_ORI, 'CRVAL2': CRVAL2_ORI,
+                       'CD1_1': CD1_1_ORI, 'CD1_2': CD1_2_ORI,
+                       'CD2_1': CD2_1_ORI, 'CD2_2': CD2_2_ORI,
+                       'CUNIT1': 'deg', 'CUNIT2': 'deg',
+                       'CTYPE1': 'RA---TAN', 'CTYPE2': 'DEC--TAN'}
 
-        PixA_obj = fits.getdata(self.FITS_obj, ext=0).T
-        hdr_obj = fits.getheader(self.FITS_obj, ext=0)
-        hdr_targ = fits.getheader(self.FITS_targ, ext=0)
-
-        w_obj = Read_WCS(hdr=hdr_obj, VERBOSE_LEVEL=self.VERBOSE_LEVEL)
-        w_targ = Read_WCS(hdr=hdr_targ, VERBOSE_LEVEL=self.VERBOSE_LEVEL)
-
-        # * maaping target pixel centers to the object frame
-        #   todo: not fast
-        NTX = int(hdr_targ["NAXIS1"]) 
-        NTY = int(hdr_targ["NAXIS2"])
-
-        _RR, _CC = np.mgrid[:NTX, :NTY]
-        XX_targ, YY_targ = _RR + 1., _CC + 1.
-        XY_targ = np.array([XX_targ.flatten(), YY_targ.flatten()]).T
-
-        # * get the projected coordinates
-        #   todo: this is too slow
-        XY_proj = w_obj.all_world2pix(w_targ.all_pix2world(XY_targ, 1), 1)
-        XX_proj = XY_proj[:, 0].reshape((NTX, NTY))
-        YY_proj = XY_proj[:, 1].reshape((NTX, NTY))
-
-        # * padding the object frame
-        if self.METHOD == 'BILINEAR':
-            KERHW = (1, 1)
-
-        if self.METHOD == 'LANCZOS3':
-            KERHW = (3, 3)
-            
-        NOX = int(hdr_obj["NAXIS1"]) 
-        NOY = int(hdr_obj["NAXIS2"])
-
-        # find the root index and shift with maximal kernel halfwidth (KERHW)
-        # Note: the index ranges (RMIN --- RMAX) and (CMIN --- CMAX) can cover
-        #       all pixels that interpolation may be use.
-
-        RMIN = (floor(XX_proj.min()) - 1) - KERHW[0]
-        RMAX = (floor(XX_proj.max()) - 1) + KERHW[0]
-        RPAD = (-np.min([RMIN, 0]), np.max([RMAX - (NOX - 1), 0]))
-
-        CMIN = (floor(YY_proj.min()) - 1) - KERHW[1]
-        CMAX = (floor(YY_proj.max()) - 1) + KERHW[1]
-        CPAD = (-np.min([CMIN, 0]), np.max([CMAX - (NOY - 1), 0]))
-        PAD_WIDTH = (RPAD, CPAD)
-
-        PixA_Eobj = np.pad(PixA_obj, PAD_WIDTH, mode='constant', constant_values=0.)
-        NEOX, NEOY = PixA_Eobj.shape
-
-        # * get the projected coordinates on extended object frame
-        XX_Eproj = XX_proj.copy()
-        XX_Eproj[:, :] += PAD_WIDTH[0][0]
-
-        YY_Eproj = YY_proj.copy()
-        YY_Eproj[:, :] += PAD_WIDTH[1][0]
-
-        RMIN_E = (floor(XX_Eproj.min()) - 1) - KERHW[0]
-        RMAX_E = (floor(XX_Eproj.max()) - 1) + KERHW[0]
-
-        CMIN_E = (floor(YY_Eproj.min()) - 1) - KERHW[1]
-        CMAX_E = (floor(YY_Eproj.max()) - 1) + KERHW[1]
-
-        assert RMIN_E >= 0 and CMIN_E >= 0 
-        assert RMAX_E < NEOX and CMAX_E < NEOY
-
-        MappingDICT = {}
-        MappingDICT['XX_Eproj'] = XX_Eproj
-        MappingDICT['YY_Eproj'] = YY_Eproj
+        # * save the original image with initialized wcs
+        header_ORI = WCS(wcsinfo_ORI).to_header(relax=True)
+        hdl_ORI = fits.HDUList([fits.PrimaryHDU(data=PixA_obj.T, header=header_ORI)])
         
-        MappingDICT['NOX'] = NOX
-        MappingDICT['NOY'] = NOY
-
-        MappingDICT['NEOX'] = NEOX
-        MappingDICT['NEOY'] = NEOY
-
-        MappingDICT['NTX'] = NTX
-        MappingDICT['NTY'] = NTY
-
-        return PixA_Eobj, MappingDICT
-
-    def resampling(self, PixA_Eobj, MappingDICT):
-
-        XX_Eproj = MappingDICT['XX_Eproj']
-        YY_Eproj = MappingDICT['YY_Eproj']
+        hdl_ORI[0].header['GAIN'] = (1.0, 'MeLOn: PlaceHolder')    
+        hdl_ORI[0].header['SATURATE'] = (50000.0, 'MeLOn: PlaceHolder')
+        hdl_ORI[0].header['EXPTIME'] = (60.0, 'MeLOn: PlaceHolder')
+        hdl_ORI[0].header['MJD-OBS'] = (58849.0, 'MeLOn: PlaceHolder')
         
-        NEOX = MappingDICT['NEOX']
-        NEOY = MappingDICT['NEOY']
+        FITS_ORI = TDIR + '/original_image.fits'
+        hdl_ORI.writeto(FITS_ORI, overwrite=True)
 
-        NTX = MappingDICT['NTX']
-        NTY = MappingDICT['NTY']
+        # * define the target wcs
+        wcsinfo_TARG = wcsinfo_ORI.copy()
 
-        # * Cupy configuration
-        MaxThreadPerB = 8
-        GPUManage = lambda NT: ((NT-1)//MaxThreadPerB + 1, min(NT, MaxThreadPerB))
-        BpG_PIX0, TpB_PIX0 = GPUManage(NTX)
-        BpG_PIX1, TpB_PIX1 = GPUManage(NTY)
-        BpG_PIX, TpB_PIX = (BpG_PIX0, BpG_PIX1), (TpB_PIX0, TpB_PIX1, 1)
+        # * determine the number of pixels of the zoomed image
+        def NPIX_ORI2ZOOMED(NPIX_ORI, ZOOM_SCALE, OUTSIZE_PARIRY):
+            if OUTSIZE_PARIRY == 'UNCHANGED':
+                if NPIX_ORI % 2 == 0: OUTSIZE_UPARIRY = 'EVEN'
+                if NPIX_ORI % 2 == 1: OUTSIZE_UPARIRY = 'ODD'
+            if OUTSIZE_PARIRY == 'ODD': OUTSIZE_UPARIRY = 'ODD'
+            if OUTSIZE_PARIRY == 'EVEN': OUTSIZE_UPARIRY = 'EVEN'
+            HALFWIDTH_ORI = NPIX_ORI/2.0  # unit of original pixel
+            if OUTSIZE_UPARIRY == 'EVEN':
+                NPIX_ZOOMED = 2 * math.ceil(HALFWIDTH_ORI/ZOOM_SCALE)
+            if OUTSIZE_UPARIRY == 'ODD':
+                NPIX_ZOOMED = 2 * math.ceil((HALFWIDTH_ORI - ZOOM_SCALE/2.0)/ZOOM_SCALE) + 1
+            return NPIX_ZOOMED
 
-        if not XX_Eproj.flags['C_CONTIGUOUS']:
-            XX_Eproj = np.ascontiguousarray(XX_Eproj, np.float64)
-            XX_Eproj_GPU = cp.array(XX_Eproj)
-        else: XX_Eproj_GPU = cp.array(XX_Eproj.astype(np.float64))
-
-        if not YY_Eproj.flags['C_CONTIGUOUS']:
-            YY_Eproj = np.ascontiguousarray(YY_Eproj, np.float64)
-            YY_Eproj_GPU = cp.array(YY_Eproj)
-        else: YY_Eproj_GPU = cp.array(YY_Eproj.astype(np.float64))
-
-        if not PixA_Eobj.flags['C_CONTIGUOUS']:
-            PixA_Eobj = np.ascontiguousarray(PixA_Eobj, np.float64)
-            PixA_Eobj_GPU = cp.array(PixA_Eobj)
-        else: PixA_Eobj_GPU = cp.array(PixA_Eobj.astype(np.float64))
-
-        PixA_resamp_GPU = cp.zeros((NTX, NTY), dtype=np.float64)
-
-        if self.METHOD == "BILINEAR":
+        NAXIS1_ZOOMED = NPIX_ORI2ZOOMED(NAXIS1_ORI, ZOOM_SCALE_X, OUTSIZE_PARIRY_X)
+        NAXIS2_ZOOMED = NPIX_ORI2ZOOMED(NAXIS2_ORI, ZOOM_SCALE_Y, OUTSIZE_PARIRY_Y)
         
-            # * perform bilinear resampling using CUDA
-            # input: PixA_Eobj | (NEOX, NEOY)
-            # input: XX_Eproj, YY_Eproj | (NTX, NTY)
-            # output: PixA_resamp | (NTX, NTY)
-            
-            _refdict = {'NTX': NTX, 'NTY': NTY, 'NEOX': NEOX, 'NEOY': NEOY}
-            _funcstr = r"""
-            extern "C" __global__ void kmain(double XX_Eproj_GPU[%(NTX)s][%(NTY)s], double YY_Eproj_GPU[%(NTX)s][%(NTY)s], 
-                double PixA_Eobj_GPU[%(NEOX)s][%(NEOY)s], double PixA_resamp_GPU[%(NTX)s][%(NTY)s])
-            {
-                int ROW = blockIdx.x*blockDim.x+threadIdx.x;
-                int COL = blockIdx.y*blockDim.y+threadIdx.y;
+        # * give the coordinate change due to the frame transform from original to zoomed
+        def COORD_ORI2ZOOMED(X_ORI, Y_ORI):
+            # NOTE: X_ORI/Y_ORI can be a number or a 1d-array
+            OFFSET_X = ZOOM_SCALE_X * (0.5 + NAXIS1_ZOOMED/2.0) - (0.5 + NAXIS1_ORI/2.0)   # unit of original pixel
+            OFFSET_Y = ZOOM_SCALE_Y * (0.5 + NAXIS2_ZOOMED/2.0) - (0.5 + NAXIS2_ORI/2.0)   # unit of original pixel
+            X_ZOOMED = (X_ORI + OFFSET_X) / ZOOM_SCALE_X
+            Y_ZOOMED = (Y_ORI + OFFSET_Y) / ZOOM_SCALE_Y
+            return X_ZOOMED, Y_ZOOMED
 
-                int NTX = %(NTX)s;
-                int NTY = %(NTY)s;
-                int NEOX = %(NEOX)s;
-                int NEOY = %(NEOY)s;
+        # * modify wcs to adapt to the zoomed frame
+        CRPIX1_ZOOMED, CRPIX2_ZOOMED = COORD_ORI2ZOOMED(CRPIX1_ORI, CRPIX2_ORI)
+        CD1_1_ZOOMED, CD1_2_ZOOMED = ZOOM_SCALE_X * CD1_1_ORI, 0.0
+        CD2_1_ZOOMED, CD2_2_ZOOMED = 0.0, ZOOM_SCALE_Y * CD2_2_ORI
 
-                if (ROW < NTX && COL < NTY) {
-                
-                    double x = XX_Eproj_GPU[ROW][COL];
-                    double y = YY_Eproj_GPU[ROW][COL];
+        if ZOOM_SCALE_X != 1.0 or ZOOM_SCALE_Y != 1.0:
+            if VERBOSE_LEVEL in [1, 2]: 
+                print('MeLOn CheckPoint: Modify WCS to adapt to the Zoomed Frame.')
+            wcsinfo_TARG['NAXIS1'], wcsinfo_TARG['NAXIS2'] = NAXIS1_ZOOMED, NAXIS2_ZOOMED
+            wcsinfo_TARG['CRPIX1'], wcsinfo_TARG['CRPIX2'] = CRPIX1_ZOOMED, CRPIX2_ZOOMED
+            wcsinfo_TARG['CD1_1'], wcsinfo_TARG['CD1_2'] = CD1_1_ZOOMED, CD1_2_ZOOMED
+            wcsinfo_TARG['CD2_1'], wcsinfo_TARG['CD2_2'] = CD2_1_ZOOMED, CD2_2_ZOOMED
+        else:
+            if VERBOSE_LEVEL in [1, 2]:
+                print('MeLOn CheckPoint: NO IMAGE ZOOM!')
+            assert np.allclose([wcsinfo_TARG['NAXIS1'], wcsinfo_TARG['NAXIS2']], [NAXIS1_ZOOMED, NAXIS2_ZOOMED])
+            assert np.allclose([wcsinfo_TARG['CRPIX1'], wcsinfo_TARG['CRPIX2']], [CRPIX1_ZOOMED, CRPIX2_ZOOMED])
+            assert np.allclose([wcsinfo_TARG['CD1_1'], wcsinfo_TARG['CD1_2']], [CD1_1_ZOOMED, CD1_2_ZOOMED])
+            assert np.allclose([wcsinfo_TARG['CD2_1'], wcsinfo_TARG['CD2_2']], [CD2_1_ZOOMED, CD2_2_ZOOMED])
 
-                    int r1 = floor(x) - 1;
-                    int c1 = floor(y) - 1;
-                    int r2 = r1 + 1;
-                    int c2 = c1 + 1;
+        alpha = np.deg2rad(PATTERN_ROTATE_ANGLE)
+        RotMAT = np.array([[np.cos(alpha), -np.sin(alpha)], [np.sin(alpha), np.cos(alpha)]])
+        RotMAT_inv = np.array([[np.cos(alpha), np.sin(alpha)], [-np.sin(alpha), np.cos(alpha)]])
 
-                    double dx = x - floor(x); 
-                    double dy = y - floor(y);
+        # * give the coordinate change due to pattern rotate on zoomed
+        def COORD_ZOOMED2ROTATED(X_ZOOMED, Y_ZOOMED):
+            # NOTE: X_ZOOMED/Y_ZOOMED can be a number or a 1d-array
+            cX_ZOOMED = X_ZOOMED - CRPIX1_ZOOMED
+            cY_ZOOMED = Y_ZOOMED - CRPIX2_ZOOMED
+            cCOORD_ZOOMED = np.array([cX_ZOOMED, cY_ZOOMED]).reshape((2, -1))
+            cCOORD_ROTATED = np.dot(RotMAT, cCOORD_ZOOMED)
+            if cCOORD_ROTATED.shape[1] == 1: cX_ROTATED, cY_ROTATED = cCOORD_ROTATED[:, 0]
+            else: cX_ROTATED, cY_ROTATED = cCOORD_ROTATED
+            X_ROTATED = cX_ROTATED + CRPIX1_ZOOMED
+            Y_ROTATED = cY_ROTATED + CRPIX2_ZOOMED
+            return X_ROTATED, Y_ROTATED
 
-                    double w11 = (1-dx) * (1-dy);
-                    double w12 = (1-dx) * dy;
-                    double w21 = dx * (1-dy);
-                    double w22 = dx * dy;
+        # * further modify wcs to adapt to the rotated pattern
+        CDMAT_ZOOMED = np.array([[CD1_1_ZOOMED, CD1_2_ZOOMED], [CD2_1_ZOOMED, CD2_2_ZOOMED]])
+        CDMAT_ROTATED = np.dot(CDMAT_ZOOMED, RotMAT_inv)
+        CD1_1_ROTATED, CD1_2_ROTATED = CDMAT_ROTATED[0, :]
+        CD2_1_ROTATED, CD2_2_ROTATED = CDMAT_ROTATED[1, :]
 
-                    PixA_resamp_GPU[ROW][COL] = w11 * PixA_Eobj_GPU[r1][c1] + w12 * PixA_Eobj_GPU[r1][c2] + 
-                        w21 * PixA_Eobj_GPU[r2][c1] + w22 * PixA_Eobj_GPU[r2][c2];
-                }
-            }
-            """
-            _code = _funcstr % _refdict
-            _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=False)
-            resamp_func = _module.get_function('kmain')
-            
-            t0 = time.time()
-            resamp_func(args=(XX_Eproj_GPU, YY_Eproj_GPU, PixA_Eobj_GPU, PixA_resamp_GPU), block=TpB_PIX, grid=BpG_PIX)
-            if self.VERBOSE_LEVEL in [1, 2]:
-                print('MeLOn CheckPoint: Cuda resampling takes [%.6f s]' %(time.time() - t0))
-            
-        if self.METHOD == "LANCZOS3":
-            
-            # * perform LANCZOS-3 resampling using CUDA
-            # input: XX_Eproj, YY_Eproj | (NTX, NTY)
-            # output: PixA_resamp | (NTX, NTY)
-            
-            _refdict = {'NTX': NTX, 'NTY': NTY}
-            _funcstr = r"""
-            extern "C" __global__ void kmain(double XX_Eproj_GPU[%(NTX)s][%(NTY)s], double YY_Eproj_GPU[%(NTX)s][%(NTY)s], 
-                double LKERNEL_X_GPU[6][%(NTX)s][%(NTY)s], double LKERNEL_Y_GPU[6][%(NTX)s][%(NTY)s])
-            {
-                int ROW = blockIdx.x*blockDim.x+threadIdx.x;
-                int COL = blockIdx.y*blockDim.y+threadIdx.y;
+        if PATTERN_ROTATE_ANGLE != 0.0:
+            if VERBOSE_LEVEL in [1, 2]:
+                print('MeLOn CheckPoint: Modify WCS to adapt to the Rotated Frame.')
+            wcsinfo_TARG['CD1_1'], wcsinfo_TARG['CD1_2'] = CD1_1_ROTATED, CD1_2_ROTATED
+            wcsinfo_TARG['CD2_1'], wcsinfo_TARG['CD2_2'] = CD2_1_ROTATED, CD2_2_ROTATED
+        else:
+            if VERBOSE_LEVEL in [1, 2]:
+                print('MeLOn CheckPoint: NO IMAGE ROTATION!')
+            assert np.allclose([wcsinfo_TARG['CD1_1'], wcsinfo_TARG['CD1_2']], [CD1_1_ROTATED, CD1_2_ROTATED])
+            assert np.allclose([wcsinfo_TARG['CD2_1'], wcsinfo_TARG['CD2_2']], [CD2_1_ROTATED, CD2_2_ROTATED])
 
-                int NTX = %(NTX)s;
-                int NTY = %(NTY)s;
-                
-                double PI = 3.141592653589793;
-                double PIS = 9.869604401089358;
-                
-                if (ROW < NTX && COL < NTY) {
-                    
-                    double x = XX_Eproj_GPU[ROW][COL];
-                    double y = YY_Eproj_GPU[ROW][COL];
-                    
-                    double dx = x - floor(x); 
-                    double dy = y - floor(y);
-                    
-                    // LANCZOS3 weights in x axis
-                    double wx0 = 3.0 * sin(PI*(-2.0 - dx)) * sin(PI*(-2.0 - dx)/3.0) / (PIS*(-2.0 - dx) * (-2.0 - dx));
-                    double wx1 = 3.0 * sin(PI*(-1.0 - dx)) * sin(PI*(-1.0 - dx)/3.0) / (PIS*(-1.0 - dx) * (-1.0 - dx));
-                    double wx2 = 1.0;
-                    if (fabs(dx) > 1e-4) {
-                        wx2 = 3.0 * sin(PI*(-dx)) * sin(PI*(-dx)/3.0) / (PIS*(-dx) * (-dx));
-                    }
-                    double wx3 = 3.0 * sin(PI*(1.0 - dx)) * sin(PI*(1.0 - dx)/3.0) / (PIS*(1.0 - dx) * (1.0 - dx));
-                    double wx4 = 3.0 * sin(PI*(2.0 - dx)) * sin(PI*(2.0 - dx)/3.0) / (PIS*(2.0 - dx) * (2.0 - dx));
-                    double wx5 = 3.0 * sin(PI*(3.0 - dx)) * sin(PI*(3.0 - dx)/3.0) / (PIS*(3.0 - dx) * (3.0 - dx));
-                    
-                    LKERNEL_X_GPU[0][ROW][COL] = wx0;
-                    LKERNEL_X_GPU[1][ROW][COL] = wx1;
-                    LKERNEL_X_GPU[2][ROW][COL] = wx2;
-                    LKERNEL_X_GPU[3][ROW][COL] = wx3;
-                    LKERNEL_X_GPU[4][ROW][COL] = wx4;
-                    LKERNEL_X_GPU[5][ROW][COL] = wx5;
-                    
-                    // LANCZOS3 weights in y axis
-                    double wy0 = 3.0 * sin(PI*(-2.0 - dy)) * sin(PI*(-2.0 - dy)/3.0) / (PIS*(-2.0 - dy) * (-2.0 - dy));
-                    double wy1 = 3.0 * sin(PI*(-1.0 - dy)) * sin(PI*(-1.0 - dy)/3.0) / (PIS*(-1.0 - dy) * (-1.0 - dy));
-                    double wy2 = 1.0;
-                    if (fabs(dy) > 1e-4) {
-                        wy2 = 3.0 * sin(PI*(-dy)) * sin(PI*(-dy)/3.0) / (PIS*(-dy) * (-dy));
-                    }
-                    double wy3 = 3.0 * sin(PI*(1.0 - dy)) * sin(PI*(1.0 - dy)/3.0) / (PIS*(1.0 - dy) * (1.0 - dy));
-                    double wy4 = 3.0 * sin(PI*(2.0 - dy)) * sin(PI*(2.0 - dy)/3.0) / (PIS*(2.0 - dy) * (2.0 - dy));
-                    double wy5 = 3.0 * sin(PI*(3.0 - dy)) * sin(PI*(3.0 - dy)/3.0) / (PIS*(3.0 - dy) * (3.0 - dy));
-                    
-                    LKERNEL_Y_GPU[0][ROW][COL] = wy0;
-                    LKERNEL_Y_GPU[1][ROW][COL] = wy1;
-                    LKERNEL_Y_GPU[2][ROW][COL] = wy2;
-                    LKERNEL_Y_GPU[3][ROW][COL] = wy3;
-                    LKERNEL_Y_GPU[4][ROW][COL] = wy4;
-                    LKERNEL_Y_GPU[5][ROW][COL] = wy5;
-                }
-            }
-            """
-            _code = _funcstr % _refdict
-            _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=False)
-            weightkernel_func = _module.get_function('kmain')
-            
-            _refdict = {'NTX': NTX, 'NTY': NTY, 'NEOX': NEOX, 'NEOY': NEOY}
-            _funcstr = r"""
-            extern "C" __global__ void kmain(double XX_Eproj_GPU[%(NTX)s][%(NTY)s], double YY_Eproj_GPU[%(NTX)s][%(NTY)s], 
-                double LKERNEL_X_GPU[6][%(NTX)s][%(NTY)s], double LKERNEL_Y_GPU[6][%(NTX)s][%(NTY)s], 
-                double PixA_Eobj_GPU[%(NEOX)s][%(NEOY)s], double PixA_resamp_GPU[%(NTX)s][%(NTY)s])
-            {
-                int ROW = blockIdx.x*blockDim.x+threadIdx.x;
-                int COL = blockIdx.y*blockDim.y+threadIdx.y;
+        # * give the throughout coordinate change from original to rotated.
+        def func_coordtrans(X_ORI, Y_ORI):
+            X_ZOOMED, Y_ZOOMED = COORD_ORI2ZOOMED(X_ORI, Y_ORI)
+            X_ROTATED, Y_ROTATED = COORD_ZOOMED2ROTATED(X_ZOOMED, Y_ZOOMED)
+            return X_ROTATED, Y_ROTATED
 
-                int NTX = %(NTX)s;
-                int NTY = %(NTY)s;
-                int NEOX = %(NEOX)s;
-                int NEOY = %(NEOY)s;
+        # * save an empty image with target wcs
+        header_TARG = WCS(wcsinfo_TARG).to_header(relax=True)
+        PixA_empty = np.zeros((wcsinfo_TARG['NAXIS1'], wcsinfo_TARG['NAXIS2'])).astype(float)
+        hdl_TARG = fits.HDUList([fits.PrimaryHDU(data=PixA_empty.T, header=header_TARG)])
+        
+        hdl_TARG[0].header['GAIN'] = (1.0, 'MeLOn: PlaceHolder')    
+        hdl_TARG[0].header['SATURATE'] = (50000.0, 'MeLOn: PlaceHolder')   
+        hdl_TARG[0].header['EXPTIME'] = (60.0, 'MeLOn: PlaceHolder')
+        hdl_TARG[0].header['MJD-OBS'] = (58849.0, 'MeLOn: PlaceHolder')
 
-                if (ROW < NTX && COL < NTY) {
-                
-                    double x = XX_Eproj_GPU[ROW][COL];
-                    double y = YY_Eproj_GPU[ROW][COL];
-                    
-                    int r0 = floor(x) - 3;
-                    int c0 = floor(y) - 3;
-                    
-                    for(int i = 0; i < 6; ++i){
-                        for(int j = 0; j < 6; ++j){
-                            double w = LKERNEL_X_GPU[i][ROW][COL] * LKERNEL_Y_GPU[j][ROW][COL];
-                            PixA_resamp_GPU[ROW][COL] += w * PixA_Eobj_GPU[r0 + i][c0 + j];
-                        }
-                    }
-                }
-            }
-            """
-            _code = _funcstr % _refdict
-            _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=False)
-            resamp_func = _module.get_function('kmain')
-            
-            t0 = time.time()
-            LKERNEL_X_GPU = cp.zeros((6, NTX, NTY), dtype=np.float64)
-            LKERNEL_Y_GPU = cp.zeros((6, NTX, NTY), dtype=np.float64)
-            weightkernel_func(args=(XX_Eproj_GPU, YY_Eproj_GPU, LKERNEL_X_GPU, LKERNEL_Y_GPU), block=TpB_PIX, grid=BpG_PIX)
-            resamp_func(args=(XX_Eproj_GPU, YY_Eproj_GPU, LKERNEL_X_GPU, LKERNEL_Y_GPU, PixA_Eobj_GPU, PixA_resamp_GPU), block=TpB_PIX, grid=BpG_PIX)
-            if self.VERBOSE_LEVEL in [1, 2]:
-                print('MeLOn CheckPoint: Cuda resampling takes [%.6f s]' %(time.time() - t0))
+        FITS_TARG = TDIR + '/target_empty_image.fits'
+        hdl_TARG.writeto(FITS_TARG, overwrite=True)
 
-        # save the resampled image
-        PixA_resamp = cp.asnumpy(PixA_resamp_GPU)
-        return PixA_resamp
+        # * run SWarp to perform the image resampling
+        FITS_resamp = TDIR + '/resampled_image.fits'
+        PixA_resamp = Cuda_Resampling.CR(FITS_obj=FITS_ORI, FITS_targ=FITS_TARG, FITS_resamp=FITS_resamp, 
+            METHOD=RESAMPLING_TYPE, FILL_ZEROPIX=False, VERBOSE_LEVEL=VERBOSE_LEVEL)
+        
+        PixA_resamp[np.isnan(PixA_resamp)] = FILL_VALUE
+        with fits.open(FITS_TARG) as hdl:
+            hdl[0].data[:, :] = PixA_resamp.T
+            hdl.writeto(FITS_resamp, overwrite=True)
+        
+        PixA_resamp = fits.getdata(FITS_resamp, ext=0).T
+        os.system('rm -rf %s' %TDIR)
+        
+        return PixA_resamp, func_coordtrans
