@@ -6,7 +6,7 @@ from astropy.wcs import WCS
 from tempfile import mkdtemp
 from CudaResampling import Cuda_Resampling
 
-__last_update__ = "2024-09-17"
+__last_update__ = "2024-09-13"
 __author__ = "Lei Hu <leihu@andrew.cmu.edu>"
 
 class Image_ZoomRotate:
@@ -173,10 +173,12 @@ class Image_ZoomRotate:
 
         # * run SWarp to perform the image resampling
         FITS_resamp = TDIR + '/resampled_image.fits'
-        PixA_resamp = Cuda_Resampling.CR(FITS_obj=FITS_ORI, FITS_targ=FITS_TARG, FITS_resamp=FITS_resamp, 
-            METHOD=RESAMPLING_TYPE, FILL_ZEROPIX=False, VERBOSE_LEVEL=VERBOSE_LEVEL)
-        
+        CR = Cuda_Resampling(FITS_obj=FITS_ORI, FITS_targ=FITS_TARG, 
+            METHOD=RESAMPLING_TYPE, VERBOSE_LEVEL=VERBOSE_LEVEL)
+        PixA_Eobj, MappingDICT = CR.mapping()
+        PixA_resamp = CR.resampling(PixA_Eobj=PixA_Eobj, MappingDICT=MappingDICT)
         PixA_resamp[np.isnan(PixA_resamp)] = FILL_VALUE
+
         with fits.open(FITS_TARG) as hdl:
             hdl[0].data[:, :] = PixA_resamp.T
             hdl.writeto(FITS_resamp, overwrite=True)
