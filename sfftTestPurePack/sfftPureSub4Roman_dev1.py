@@ -565,6 +565,6 @@ print('************ End NVTX! ************')
 
 """
 # command to profile the workflow using Nvidia Nsight Systems
-nsys profile --trace-fork-before-exec=true --python-backtrace=cuda --python-sampling=true --trace=cuda,nvtx,cublas,cusparse,cudnn,cudla,cusolver,opengl,openacc,openmp,osrt,mpi,nvvideo,vulkan,python-gil python sfftPureSub4Roman.py
+nsys profile --trace-fork-before-exec=true --python-backtrace=cuda --python-sampling=true --trace=cuda,nvtx,cublas,cusparse,cudnn,cudla,cusolver,opengl,openacc,openmp,osrt,mpi,nvvideo,vulkan,python-gil python sfftPureSub4Roman_dev1.py
 
 """
