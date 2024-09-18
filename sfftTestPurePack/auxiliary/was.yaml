@@ -115,7 +115,7 @@ gal:
 
 input:
     obseq_data:
-        file_name: /hildafs/projects/phy220048p/leihu/AstroWork/DECamDIA/notebooks/snpit/sfftTestPurePack/auxiliary/Roman_WAS_obseq_11_1_23.fits
+        file_name: /hack_team_01/leiworkflow/diff-img/sfftTestPurePack/auxiliary/Roman_WAS_obseq_11_1_23.fits
         visit: 80840
         SCA: '@image.SCA'
     roman_psf:
