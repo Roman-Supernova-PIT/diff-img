@@ -16,7 +16,8 @@ from sfft.utils.StampGenerator import Stamp_Generator
 from sfft.utils.SkyLevelEstimator import SkyLevel_Estimator
 from sfft.utils.SFFTSolutionReader import Realize_MatchingKernel
 from sfft.utils.DeCorrelationCalculator import DeCorrelation_Calculator
-GDIR = '/hack_team_01/leiworkflow/diff-img/sfftTestPurePack'
+# GDIR = '/global/u1/l/leihu/JupyterLab/Hackathon/diff-img/sfftTestPurePack'  # nersc
+GDIR = '/hack_team_01/leiworkflow/diff-img/sfftTestPurePack'  # curoisity
 
 utils_dir = GDIR + '/utils'
 sys.path.insert(1, utils_dir)
@@ -531,7 +532,7 @@ def WorkFlow_NVTX(refname, sciname, input_dir, output_dir, aux_dir, config_file)
             PixA_Inp_GPU=cp.array(PixA_DIFF, dtype=cp.float64), 
             KERNEL_GPU=cp.array(DCKer, dtype=cp.float64),
             PAD_FILL_VALUE=0., NORMALIZE_KERNEL=True, FFT_BACKEND="cupy"))
-        
+
         with fits.open(FITS_DIFF) as hdl:
             hdl[0].data[:, :] = PixA_DCDIFF.T
             hdl.writeto(FITS_DCDIFF, overwrite=True)
