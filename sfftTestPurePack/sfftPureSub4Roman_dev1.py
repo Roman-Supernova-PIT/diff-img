@@ -106,6 +106,7 @@ def WorkFlow(refname, sciname, input_dir, output_dir, aux_dir, config_file):
     # *** step0b. resampling [science image & detection mask onto reference frame]
     PixA_resamp1 = CR1.resampling(PixA_Eobj=PixA_Eobj1, MappingDICT=MappingDICT1)
     PixA_resamp2 = CR2.resampling(PixA_Eobj=PixA_Eobj2, MappingDICT=MappingDICT2)
+    BlankMask = PixA_resamp1 == 0.
 
     with fits.open(FITS_REF) as hdl:
         PixA_resamp1[PixA_resamp1 == 0.] = np.nan
@@ -238,12 +239,14 @@ def WorkFlow(refname, sciname, input_dir, output_dir, aux_dir, config_file):
 
     with fits.open(FITS_R) as hdl:
         _PixA = hdl[0].data.T
+        _PixA[np.isnan(_PixA)] = 0.
         _PixA[LYMASK_BKG] = 0.0
         hdl[0].data[:, :] = _PixA.T
         hdl.writeto(FITS_mREF, overwrite=True)
 
     with fits.open(FITS_S) as hdl:
         _PixA = hdl[0].data.T
+        _PixA[np.isnan(_PixA)] = 0.
         _PixA[LYMASK_BKG] = 0.0
         hdl[0].data[:, :] = _PixA.T
         hdl.writeto(FITS_mSCI, overwrite=True)
@@ -265,6 +268,12 @@ def WorkFlow(refname, sciname, input_dir, output_dir, aux_dir, config_file):
         KerPolyOrder=KerPolyOrder, BGPolyOrder=BGPolyOrder, ConstPhotRatio=ConstPhotRatio, \
         BACKEND_4SUBTRACT=BACKEND_4SUBTRACT, CUDA_DEVICE_4SUBTRACT=CUDA_DEVICE_4SUBTRACT, \
         NUM_CPU_THREADS_4SUBTRACT=NUM_CPU_THREADS_4SUBTRACT)
+    
+    with fits.open(FITS_DIFF) as hdl:
+        PixA_DIFF = hdl[0].data.T
+        PixA_DIFF[BlankMask] = 0.
+        hdl[0].data[:, :] = PixA_DIFF.T
+        hdl.writeto(FITS_DIFF, overwrite=True)
     os.system('rm -rf %s' %TDIR)
 
     # *** step3. noise decorrelation & SNR estimation 
@@ -342,6 +351,7 @@ def WorkFlow_NVTX(refname, sciname, input_dir, output_dir, aux_dir, config_file)
     with nvtx.annotate("Step0b_resamp_main", color="#8337EC"):
         PixA_resamp1 = CR1.resampling(PixA_Eobj=PixA_Eobj1, MappingDICT=MappingDICT1)
         PixA_resamp2 = CR2.resampling(PixA_Eobj=PixA_Eobj2, MappingDICT=MappingDICT2)
+        BlankMask = PixA_resamp1 == 0.
 
     with fits.open(FITS_REF) as hdl:
         PixA_resamp1[PixA_resamp1 == 0.] = np.nan
@@ -477,12 +487,14 @@ def WorkFlow_NVTX(refname, sciname, input_dir, output_dir, aux_dir, config_file)
 
         with fits.open(FITS_R) as hdl:
             _PixA = hdl[0].data.T
+            _PixA[np.isnan(_PixA)] = 0.
             _PixA[LYMASK_BKG] = 0.0
             hdl[0].data[:, :] = _PixA.T
             hdl.writeto(FITS_mREF, overwrite=True)
 
         with fits.open(FITS_S) as hdl:
             _PixA = hdl[0].data.T
+            _PixA[np.isnan(_PixA)] = 0.
             _PixA[LYMASK_BKG] = 0.0
             hdl[0].data[:, :] = _PixA.T
             hdl.writeto(FITS_mSCI, overwrite=True)
@@ -504,6 +516,12 @@ def WorkFlow_NVTX(refname, sciname, input_dir, output_dir, aux_dir, config_file)
             KerPolyOrder=KerPolyOrder, BGPolyOrder=BGPolyOrder, ConstPhotRatio=ConstPhotRatio, \
             BACKEND_4SUBTRACT=BACKEND_4SUBTRACT, CUDA_DEVICE_4SUBTRACT=CUDA_DEVICE_4SUBTRACT, \
             NUM_CPU_THREADS_4SUBTRACT=NUM_CPU_THREADS_4SUBTRACT)
+        
+        with fits.open(FITS_DIFF) as hdl:
+            PixA_DIFF = hdl[0].data.T
+            PixA_DIFF[BlankMask] = 0.
+            hdl[0].data[:, :] = PixA_DIFF.T
+            hdl.writeto(FITS_DIFF, overwrite=True)
         os.system('rm -rf %s' %TDIR)
 
     # *** step3. noise decorrelation & SNR estimation 
@@ -532,7 +550,7 @@ def WorkFlow_NVTX(refname, sciname, input_dir, output_dir, aux_dir, config_file)
             PixA_Inp_GPU=cp.array(PixA_DIFF, dtype=cp.float64), 
             KERNEL_GPU=cp.array(DCKer, dtype=cp.float64),
             PAD_FILL_VALUE=0., NORMALIZE_KERNEL=True, FFT_BACKEND="cupy"))
-
+        
         with fits.open(FITS_DIFF) as hdl:
             hdl[0].data[:, :] = PixA_DCDIFF.T
             hdl.writeto(FITS_DCDIFF, overwrite=True)
