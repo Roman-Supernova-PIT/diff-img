@@ -65,7 +65,7 @@ def postprocess(ra,dec,band,pair_info,
 
     ###########################################################################
 
-    with nvtx.annotate( "template_info", color=0x4444ff ):
+    with nvtx.annotate( "template_info", color=0x8800ff ):
         template_info, sci_info = pair_info
         sci_pointing, sci_sca = sci_info['pointing'], sci_info['sca']
         template_pointing, template_sca = template_info['pointing'], template_info['sca']
@@ -92,7 +92,7 @@ def postprocess(ra,dec,band,pair_info,
         dcker_savename = f'dcker_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits'
 
         # Generate decorrelation kernel.
-        with nvtx.annotate( "decorr_kernel", color=0x8888ff ):
+        with nvtx.annotate( "decorr_kernel", color="green" ):
             dcker_path = decorr_kernel(sci_skysub_path,template_skysub_path,
                                        sci_psf_path,template_psf_path,
                                        diffpath,solnpath,
@@ -101,14 +101,14 @@ def postprocess(ra,dec,band,pair_info,
             logger.debug(f'Path to decorrelation kernel: \n {dcker_path}')
 
         # Apply decorrelation kernel to images
-        with nvtx.annotate( "decorr_img diff", color=0xaaaaff ):
+        with nvtx.annotate( "decorr_img diff", color="green" ):
             decorr_imgpath = decorr_img(diffpath,dcker_path)
         if verbose:
             logger.debug(f'Path to final decorrelated differenced image: \n {decorr_imgpath}')
 
         sci_conv = os.path.join(dia_out_dir,f'convolved/conv_sci_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
         zpt_savename = f'zptimg_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits'
-        with nvtx.annotate( "decorr_img zpt", color=0xaaaaff ):
+        with nvtx.annotate( "decorr_img zpt", color="green" ):
             zpt_imgpath = decorr_img(sci_conv,dcker_path,savename=zpt_savename)
         if verbose:
             logger.debug(f'Path to zeropoint image: \n {zpt_imgpath}')
@@ -120,7 +120,7 @@ def postprocess(ra,dec,band,pair_info,
         if verbose:
             logger.debug(f'Path to decorrelated PSF (use for photometry): \n {decorr_psfpath}')
 
-        with nvtx.annotate( "stamp making", color=0xaa88ff ):
+        with nvtx.annotate( "stamp making", color="red" ):
             # Make stamps
             skysub_stamp_savename = f'stamp_{ra}_{dec}_skysub_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}.fits'
             skysub_stamp_path = stampmaker(ra,dec,sci_skysub_path,savename=skysub_stamp_savename,shape=np.array([100,100]))

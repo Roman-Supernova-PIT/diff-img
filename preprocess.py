@@ -131,7 +131,7 @@ def preprocess(ra,dec,band,pair_info,
 
     logger.info( "*** Starting imalign" )
     t_align_savename = f'skysub_Roman_TDS_simple_model_{band}_{t_pointing}_{t_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits'
-    with nvtx.annotate( "imalign", color=0xffaaaa ):
+    with nvtx.annotate( "imalign", color="green" ):
         t_align = imalign(template_path=sci_skysub_path,sci_path=t_skysub,savename=t_align_savename,force=True) # NOTE: This is correct, not flipped.
 
     logger.debug(f'Path to sky-subtracted science image: \n {sci_skysub_path}')
@@ -149,7 +149,7 @@ def preprocess(ra,dec,band,pair_info,
     else:
         # TODO : think about config file location and configurability / parameters
         logger.info( "*** Starting get_imsim_psf calls" )
-        with nvtx.annotate( "get_imsim_psf things", color=0xffaa22 ):
+        with nvtx.annotate( "get_imsim_psf", color="red" ):
             sci_psf_path = get_imsim_psf(ra, dec, band, sci_pointing, sci_sca,
                                          config_yaml_file=os.path.join( os.getenv("SIMS_DIR"), "tds.yaml" ) )
             if verbose:
@@ -158,6 +158,7 @@ def preprocess(ra,dec,band,pair_info,
             t_imsim_psf = get_imsim_psf(ra, dec, band, t_pointing, t_sca, logger=logger,
                                         config_yaml_file=os.path.join( os.getenv("SIMS_DIR"), "tds.yaml" ) )
 
+        with nvtx.annotate( "rotate_psf", color="yellow" ):
             rot_psf_name = f'rot_psf_{band}_{t_pointing}_{t_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits'
             t_psf_path = rotate_psf(ra,dec,t_imsim_psf,sci_skysub_path,savename=rot_psf_name,force=True)
             if verbose:
@@ -195,7 +196,7 @@ def run(oid, band, n_templates=1, cpus_per_task=1, verbose=False):
     pairs = list(itertools.product(template_list,science_list))
 
     logger.info( "***** Doing skysub" )
-    with nvtx.annotate( "skysub", color=0xff6666 ):
+    with nvtx.annotate( "skysub", color="red" ):
          # First, unzip and sky subtract the images in their own multiprocessing pool.
         all_list = template_list + science_list
         for img in all_list:
@@ -223,9 +224,8 @@ def run(oid, band, n_templates=1, cpus_per_task=1, verbose=False):
 #    partial_preprocess = partial(preprocess,ra,dec,band,verbose=verbose)
 
     logger.info( "***** Calling preprocess" )
-    with nvtx.annotate( "partial_preprocess", color=0xffaaaa ):
-        for pair in pairs:
-            preprocess(ra,dec,band,pair,verbose=verbose)
+    for pair in pairs:
+        preprocess(ra,dec,band,pair,verbose=verbose)
 #        with Manager() as mgr:
 #            mgr_pairs = mgr.list(pairs)
 #            with Pool(cpus_per_task) as pool_2:
