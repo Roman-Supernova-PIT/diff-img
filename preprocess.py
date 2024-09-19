@@ -1,3 +1,8 @@
+# temp import for use with nsys
+# (see "with nvtx.annotate" blocks below)
+import nvtx
+
+
 # IMPORTS Standard:
 import logging
 import tracemalloc
@@ -10,6 +15,8 @@ import sys
 import re
 import matplotlib.pyplot as plt
 import time
+import json
+import numpy as np
 
 # Make numpy stop thread hogging.
 # I don't think I need this if I have it in the batch file, right?
@@ -93,7 +100,8 @@ def skysub(infodict):
     values for each argument. Use this to enable use of multiprocessing.Pool.map.
     """
     band, pointing, sca = infodict['filter'], infodict['pointing'], infodict['sca']
-    sky_subtract(band=band,pointing=pointing,sca=sca)
+    output_path, skylvl, skyrms, DETECT_MASK = sky_subtract(band=band, pointing=pointing, sca=sca, force=True)
+    return output_path, skyrms, DETECT_MASK
 
 def preprocess(ra,dec,band,pair_info,
                skysub_dir=os.path.join(dia_out_dir,'skysub'),
@@ -121,8 +129,10 @@ def preprocess(ra,dec,band,pair_info,
     sci_skysub_path = os.path.join(skysub_dir,f'skysub_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}.fits')
     t_skysub = os.path.join(skysub_dir,f'skysub_Roman_TDS_simple_model_{band}_{t_pointing}_{t_sca}.fits')
 
+    logger.info( "*** Starting imalign" )
     t_align_savename = f'skysub_Roman_TDS_simple_model_{band}_{t_pointing}_{t_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits'
-    t_align = imalign(template_path=sci_skysub_path,sci_path=t_skysub,savename=t_align_savename,force=True) # NOTE: This is correct, not flipped.
+    with nvtx.annotate( "imalign", color=0xffaaaa ):
+        t_align = imalign(template_path=sci_skysub_path,sci_path=t_skysub,savename=t_align_savename,force=True) # NOTE: This is correct, not flipped.
 
     logger.debug(f'Path to sky-subtracted science image: \n {sci_skysub_path}')
     logger.debug(f'Path to aligned, sky-subtracted template image: \n {t_align}')
@@ -138,18 +148,21 @@ def preprocess(ra,dec,band,pair_info,
 
     else:
         # TODO : think about config file location and configurability / parameters
-        sci_psf_path = get_imsim_psf(ra, dec, band, sci_pointing, sci_sca,
-                                     config_yaml_file=os.path.join( os.getenv("SIMS_DIR"), "tds.yaml" ) )
-        if verbose:
-            logger.debug(f'Path to science PSF: \n {sci_psf_path}')
+        logger.info( "*** Starting get_imsim_psf calls" )
+        with nvtx.annotate( "get_imsim_psf things", color=0xffaa22 ):
+            sci_psf_path = get_imsim_psf(ra, dec, band, sci_pointing, sci_sca,
+                                         config_yaml_file=os.path.join( os.getenv("SIMS_DIR"), "tds.yaml" ) )
+            if verbose:
+                logger.debug(f'Path to science PSF: \n {sci_psf_path}')
 
-        t_imsim_psf = get_imsim_psf(ra, dec, band, t_pointing, t_sca, logger=logger,
-                                    config_yaml_file=os.path.join( os.getenv("SIMS_DIR"), "tds.yaml" ) )
+            t_imsim_psf = get_imsim_psf(ra, dec, band, t_pointing, t_sca, logger=logger,
+                                        config_yaml_file=os.path.join( os.getenv("SIMS_DIR"), "tds.yaml" ) )
 
-        rot_psf_name = f'rot_psf_{band}_{t_pointing}_{t_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits'
-        t_psf_path = rotate_psf(ra,dec,t_imsim_psf,sci_skysub_path,savename=rot_psf_name,force=True)
-        if verbose:
-            logger.debug(f'Path to template PSF: \n {t_psf_path}')
+            rot_psf_name = f'rot_psf_{band}_{t_pointing}_{t_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits'
+            t_psf_path = rotate_psf(ra,dec,t_imsim_psf,sci_skysub_path,savename=rot_psf_name,force=True)
+            if verbose:
+                logger.debug(f'Path to template PSF: \n {t_psf_path}')
+
 
         sci_conv_name = f'conv_sci_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}_-_{band}_{t_pointing}_{t_sca}.fits'
         ref_conv_name = f'conv_ref_Roman_TDS_simple_model_{band}_{t_pointing}_{t_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits'
@@ -157,40 +170,68 @@ def preprocess(ra,dec,band,pair_info,
         if verbose:
             logger.debug(f'Path to cross-convolved science image: \n {sci_conv} \n Path to cross-convolved template image: \n {temp_conv}')
 
+        #cuda.close()
+            
 def run(oid, band, n_templates=1, cpus_per_task=1, verbose=False):
-
+    
     ###################################################################
     # Start tracemalloc.
     tracemalloc.start()
 
     ###################################################################
 
+    logger = set_logger( "preprocess_run", "pre_run" )
+    
     if verbose:
         start_time = time.time()
 
+    logger.info( "***** Getting transient info" )
     ra,dec,start,end = get_transient_info(oid)
+    logger.info( "***** Getting template_list" )
     template_list = get_templates(oid,band,infodir,n_templates,verbose=verbose)
+    logger.info( "***** Getting science_list" )
     science_list = get_science(oid,band,infodir,verbose=verbose)
+    
     pairs = list(itertools.product(template_list,science_list))
 
-    # First, unzip and sky subtract the images in their own multiprocessing pool.
-    all_list = template_list + science_list
-    with Pool(cpus_per_task) as pool:
-        process = pool.map(skysub, all_list)
-        pool.close()
-        pool.join()
+    logger.info( "***** Doing skysub" )
+    with nvtx.annotate( "skysub", color=0xff6666 ):
+         # First, unzip and sky subtract the images in their own multiprocessing pool.
+        all_list = template_list + science_list
+        for img in all_list:
+             skysub_img_path, skyrms, DETECT_MASK = skysub(img)
+             os.makedirs(os.path.join(dia_out_dir, 'skyrms'), exist_ok=True)
+             skysub_img_basename = os.path.basename(skysub_img_path)
+             skyrmspath = os.path.join(dia_out_dir, f'skyrms/{skysub_img_basename}.json')
+             # TODO : worry about using skyrms.mean(), think if we should use something else
+             json.dump( { 'skyrms': skyrms.mean() }, open( skyrmspath, "w" ) )
+             os.makedirs( os.path.join( dia_out_dir, 'detect_mask' ), exist_ok=True )
+             fname = os.path.join( dia_out_dir, f'detect_mask/{skysub_img_basename}.npy' )
+             logger.info( f"Writing detection mask to {fname}" )
+             np.save( fname, DETECT_MASK )
+             
+
+#        with Pool(cpus_per_task) as pool:
+#            process = pool.map(skysub, all_list)
+#            pool.close()
+#            pool.join()
+
 
     if verbose:
         print('\n ******************************************************** \n Images have been sky-subtracted. \n  ******************************************************** \n')
 
-    partial_preprocess = partial(preprocess,ra,dec,band,verbose=verbose)
+#    partial_preprocess = partial(preprocess,ra,dec,band,verbose=verbose)
 
-    with Manager() as mgr:
-        mgr_pairs = mgr.list(pairs)
-        with Pool(cpus_per_task) as pool_2:
-            process_2 = pool_2.map(partial_preprocess,mgr_pairs)
-            pool_2.close()
-            pool_2.join()
+    logger.info( "***** Calling preprocess" )
+    with nvtx.annotate( "partial_preprocess", color=0xffaaaa ):
+        for pair in pairs:
+            preprocess(ra,dec,band,pair,verbose=verbose)
+#        with Manager() as mgr:
+#            mgr_pairs = mgr.list(pairs)
+#            with Pool(cpus_per_task) as pool_2:
+#                process_2 = pool_2.map(partial_preprocess,mgr_pairs)
+#                pool_2.close()
+#                pool_2.join()
 
     if verbose:
         print('\n ******************************************************** \n Templates aligned, PSFs retrieved and aligned, images cross-convolved. \n  ******************************************************** \n')
