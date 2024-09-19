@@ -215,6 +215,7 @@ def WorkFlow_NVTX(refname, sciname, input_dir, output_dir, aux_dir, config_file)
 
         PixA_lREF = fits.getdata(FITS_lREF, ext=0).T
         PixA_lSCI = fits.getdata(FITS_lSCI, ext=0).T
+        
         PixA_lREF[np.isnan(PixA_lREF)] = 0.
         PixA_lSCI[np.isnan(PixA_lSCI)] = 0.
         
