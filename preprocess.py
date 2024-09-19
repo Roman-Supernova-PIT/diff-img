@@ -137,11 +137,13 @@ def preprocess(ra,dec,band,pair_info,
         return None, None
 
     else:
-        sci_psf_path = get_imsim_psf(ra,dec,band,sci_pointing,sci_sca)
+        sci_psf_path = get_imsim_psf(ra,dec,band,sci_pointing,sci_sca,
+                                     config_yaml_file=os.path.join( os.getenv("SIMS_DIR"), "tds.yaml" ) )
         if verbose:
             logger.debug(f'Path to science PSF: \n {sci_psf_path}')
 
-        t_imsim_psf = get_imsim_psf(ra,dec,band,t_pointing,t_sca,logger=logger)
+        t_imsim_psf = get_imsim_psf(ra,dec,band,t_pointing,t_sca,logger=logger,
+                                    config_yaml_file=os.path.join( os.getenv("SIMS_DIR"), "tds.yaml" ) )
 
         rot_psf_name = f'rot_psf_{band}_{t_pointing}_{t_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits'
         t_psf_path = rotate_psf(ra,dec,t_imsim_psf,sci_skysub_path,savename=rot_psf_name,force=True)
@@ -172,7 +174,7 @@ def run(oid,band,n_templates=1,verbose=False):
 
     # First, unzip and sky subtract the images in their own multiprocessing pool.
     all_list = template_list + science_list
-    cpus_per_task = int(os.environ['SLURM_CPUS_PER_TASK'])
+    cpus_per_task = 1
     with Pool(cpus_per_task) as pool:
         process = pool.map(skysub, all_list)
         pool.close()
