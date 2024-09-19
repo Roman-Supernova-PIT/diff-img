@@ -131,7 +131,7 @@ def preprocess(ra,dec,band,pair_info,
 
     logger.info( "*** Starting imalign" )
     t_align_savename = f'skysub_Roman_TDS_simple_model_{band}_{t_pointing}_{t_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits'
-    with nvtx.annotate( "imalign", color="green" ):
+    with nvtx.annotate( "imalign", color="yellow" ):
         t_align = imalign(template_path=sci_skysub_path,sci_path=t_skysub,savename=t_align_savename,force=True) # NOTE: This is correct, not flipped.
 
     logger.debug(f'Path to sky-subtracted science image: \n {sci_skysub_path}')
