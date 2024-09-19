@@ -1,3 +1,7 @@
+# temp import for use with nsys
+# (see "with nvtx.annotate" blocks below)
+import nvtx
+
 # IMPORTS Standard:
 import logging
 import tracemalloc
@@ -122,7 +126,8 @@ def preprocess(ra,dec,band,pair_info,
     t_skysub = os.path.join(skysub_dir,f'skysub_Roman_TDS_simple_model_{band}_{t_pointing}_{t_sca}.fits')
 
     t_align_savename = f'skysub_Roman_TDS_simple_model_{band}_{t_pointing}_{t_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits'
-    t_align = imalign(template_path=sci_skysub_path,sci_path=t_skysub,savename=t_align_savename,force=True) # NOTE: This is correct, not flipped.
+    with nvtx.annotate( "imalign", color="green" ):
+        t_align = imalign(template_path=sci_skysub_path,sci_path=t_skysub,savename=t_align_savename,force=True) # NOTE: This is correct, not flipped.
 
     logger.debug(f'Path to sky-subtracted science image: \n {sci_skysub_path}')
     logger.debug(f'Path to aligned, sky-subtracted template image: \n {t_align}')
@@ -137,18 +142,20 @@ def preprocess(ra,dec,band,pair_info,
         return None, None
 
     else:
-        sci_psf_path = get_imsim_psf(ra,dec,band,sci_pointing,sci_sca,
-                                     config_yaml_file=os.path.join( os.getenv("SIMS_DIR"), "tds.yaml" ) )
-        if verbose:
-            logger.debug(f'Path to science PSF: \n {sci_psf_path}')
+        with nvtx.annotate( "get_imsim_psf", color="red" ):
+            sci_psf_path = get_imsim_psf(ra,dec,band,sci_pointing,sci_sca,
+                                         config_yaml_file=os.path.join( os.getenv("SIMS_DIR"), "tds.yaml" ) )
+            if verbose:
+                logger.debug(f'Path to science PSF: \n {sci_psf_path}')
 
-        t_imsim_psf = get_imsim_psf(ra,dec,band,t_pointing,t_sca,logger=logger,
-                                    config_yaml_file=os.path.join( os.getenv("SIMS_DIR"), "tds.yaml" ) )
+            t_imsim_psf = get_imsim_psf(ra,dec,band,t_pointing,t_sca,logger=logger,
+                                        config_yaml_file=os.path.join( os.getenv("SIMS_DIR"), "tds.yaml" ) )
 
-        rot_psf_name = f'rot_psf_{band}_{t_pointing}_{t_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits'
-        t_psf_path = rotate_psf(ra,dec,t_imsim_psf,sci_skysub_path,savename=rot_psf_name,force=True)
-        if verbose:
-            logger.debug(f'Path to template PSF: \n {t_psf_path}')
+        with nvtx.annotate( "rotate_psf", color="yellow" ):
+            rot_psf_name = f'rot_psf_{band}_{t_pointing}_{t_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits'
+            t_psf_path = rotate_psf(ra,dec,t_imsim_psf,sci_skysub_path,savename=rot_psf_name,force=True)
+            if verbose:
+                logger.debug(f'Path to template PSF: \n {t_psf_path}')
 
         sci_conv_name = f'conv_sci_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}_-_{band}_{t_pointing}_{t_sca}.fits'
         ref_conv_name = f'conv_ref_Roman_TDS_simple_model_{band}_{t_pointing}_{t_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits'
@@ -172,25 +179,19 @@ def run(oid,band,n_templates=1,verbose=False):
     science_list = get_science(oid,band,infodir,verbose=verbose)
     pairs = list(itertools.product(template_list,science_list))
 
-    # First, unzip and sky subtract the images in their own multiprocessing pool.
-    all_list = template_list + science_list
-    cpus_per_task = 1
-    with Pool(cpus_per_task) as pool:
-        process = pool.map(skysub, all_list)
-        pool.close()
-        pool.join()
+    with nvtx.annotate( "skysub", color="red" ):
+        # First, unzip and sky subtract the images in their own multiprocessing pool.
+        all_list = template_list + science_list
+        for img in all_list:
+            skysub( img )
 
     if verbose:
         print('\n ******************************************************** \n Images have been sky-subtracted. \n  ******************************************************** \n')
 
     partial_preprocess = partial(preprocess,ra,dec,band,verbose=verbose)
 
-    with Manager() as mgr:
-        mgr_pairs = mgr.list(pairs)
-        with Pool(cpus_per_task) as pool_2:
-            process_2 = pool_2.map(partial_preprocess,mgr_pairs)
-            pool_2.close()
-            pool_2.join()
+    for pair in pairs:
+        partial_preprocess(pair)
 
     if verbose:
         print('\n ******************************************************** \n Templates aligned, PSFs retrieved and aligned, images cross-convolved. \n  ******************************************************** \n')
