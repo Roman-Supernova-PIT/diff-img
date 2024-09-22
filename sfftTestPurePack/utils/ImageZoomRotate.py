@@ -7,33 +7,14 @@ from astropy.wcs import WCS
 from tempfile import mkdtemp
 from CudaResampling import Cuda_Resampling
 
-__last_update__ = "2024-09-19"
+__last_update__ = "2024-09-22"
 __author__ = "Lei Hu <leihu@andrew.cmu.edu>"
 
 class Image_ZoomRotate:
     @staticmethod
     def IZR(PixA_obj, ZOOM_SCALE_X=1.0, ZOOM_SCALE_Y=1.0, OUTSIZE_PARIRY_X='UNCHANGED', OUTSIZE_PARIRY_Y='UNCHANGED', \
         PATTERN_ROTATE_ANGLE=0.0, RESAMPLING_TYPE='LANCZOS3', FILL_VALUE=0.0, VERBOSE_LEVEL=2):
-        
-        """
-        # Remarks on Image Zoom & Rotate
-        # [1] In this function, 'Zoom' means to change the spatial resolution (pixel size) of given image.
-        #     That is to say, we would like to resample the original image on a new grid with different resolution.
-        #     The arguments -ZOOM_SCALE_X and -ZOOM_SCALE_Y control the resacle factor of pixel size.
-        #     E.g., ZOOM_SCALE_X = 1.2 means new pixel is 1.2 times larger than the original pixel along the X axis.
-        #
-        # [2] Throughout the image Zoom, the position of image center is always pinned.
-        #     The Zoomed image frame has the smallest area which can fully cover the original frame.
-        #     NOTE: the image Zoom would not alert the even/odd property of image size.
-        # 
-        # [3] This function also allows for an additional pattern rotation about the pinned image center.
-        #     The argument -PATTERN_ROTATE_ANGLE is the rotate angle (counterclockwise, in deg).
-        # 
-        # [4] Given that the function is commonly used to manipulate PSF model, 
-        #     here we set LANCZOS4 as default resampling method following PSFEx.
-        #
-        """
-
+        """ Image Zoom and Rotate """
         # check inputs
         assert ZOOM_SCALE_X > 0.0
         assert ZOOM_SCALE_Y > 0.0

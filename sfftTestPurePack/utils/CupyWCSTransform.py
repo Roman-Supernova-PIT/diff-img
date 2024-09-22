@@ -1,6 +1,6 @@
 import cupy as cp
 
-__last_update__ = "2024-09-19"
+__last_update__ = "2024-09-22"
 __author__ = "Shu Liu <shl159@pitt.edu> & Lei Hu <leihu@andrew.cmu.edu>"
 
 class Cupy_WCS_Transform:
@@ -8,15 +8,7 @@ class Cupy_WCS_Transform:
         return None
 
     def read_cd_wcs(self, hdr_wcs, CDKEY="CD"):
-        """
-        # * Note on the CD matrix transformation:
-        The sky coordinate (x, y) relative to reference point can be connected with 
-        the image coordinate (u, v) relative to reference point by the CD matrix:
-            [x]   [CD1_1 CD1_2] [u]
-            [y] = [CD2_1 CD2_2] [v]
-        where CD1_1, CD1_2, CD2_1, CD2_2 are stored in the FITS header.
-        
-        """
+        """Read CD matrix from the header"""
         assert hdr_wcs["CTYPE1"] == "RA---TAN"
         assert hdr_wcs["CTYPE2"] == "DEC--TAN"
 
@@ -48,92 +40,7 @@ class Cupy_WCS_Transform:
         return KEYDICT, CD_GPU
 
     def read_sip_wcs(self, hdr_wcs):
-        """
-        # * Note on the SIP transformation:
-        The image coordinate (u, v) relative to reference point and we have undistorted image coordinate (U, V):
-            U = u + f(u, v)
-            V = v + g(u, v)
-        where f(u, v) and g(u, v) are the SIP distortion functions with polynomial form:
-            f(u, v) = sum_{p, q} A_{pq} u^p v^q, p + q <= A_ORDER
-            g(u, v) = sum_{p, q} B_{pq} u^p v^q, p + q <= B_ORDER
-        These coefficients are stored in the FITS header and define a foward transformation from (u, v) to (U, V). 
-        
-        The sky coordinate (x, y) relative to reference point can be connected with (U, V) by the reversible CD matrix:
-            [x]   [CD1_1 CD1_2] [U]
-            [y] = [CD2_1 CD2_2] [V]
-        So the forward transformation & CD matrix (with considering the reference point) is equivalent to a pix2world function.
-        
-        The reverse question is how to obtain the backward transformation from undistorted (U, V) to distorted (u, v).
-        Once we have the backward transformation, we can combine a reversed CD matrix 
-        (with considering the reference point) to get the world2pix function.
-
-        A simple approach (not accurate) is to assume the forward transformation also has a polynomial form:
-            u = U + fp(U, V)
-            v = V + gp(U, V)
-        where 
-            fp(U, V) = sum_{p, q} AP_{pq} U^p V^q, p + q <= A_ORDER
-            gp(U, V) = sum_{p, q} BP_{pq} U^p V^q, p + q <= B_ORDER
-        
-        The coefficients AP_{pq} and BP_{pq} can be obtained by solving the linear equations separately.
-            [u - U] = [U^p*V^q] [AP_{pq}]
-            
-            shapes: 
-            b: [u - U]   | (N, 1), 
-            A: [U^p*V^q] | (N, (A_ORDER+1)*(A_ORDER+2)/2)
-            x: [AP_{pq}] | ((A_ORDER+1)*(A_ORDER+2)/2, 1)
-            
-            [v - V] = [U^p*V^q] [BP_{pq}]
-            b: [v - V]   | (N, 1),
-            A: [U^p*V^q] | (N, (B_ORDER+1)*(B_ORDER+2)/2)
-            x: [BP_{pq}] | ((B_ORDER+1)*(B_ORDER+2)/2, 1)
-
-            The two matrices encode the "backward" transformation in fp(U, V) and gp(U, V).
-            Let's denote the two matrices as FP_UV and GP_UV, respectively.
-
-        # * A WCS example with SIP distortion
-        CTYPE1  = 'RA---TAN-SIP'
-        CTYPE2  = 'DEC--TAN-SIP'
-        
-        CRPIX1  =               2044.0 
-        CRPIX2  =               2044.0 
-        
-        CD1_1   = 2.65458074767927E-05
-        CD1_2   = -1.2630331175158E-05 
-        CD2_1   = 1.38917634264203E-05 
-        CD2_2   = 2.57785917553667E-05
-        
-        CRVAL1  =    9.299707734492053 
-        CRVAL2  =  -43.984663860136145
-
-        A_ORDER =                    4 
-        A_0_2   =     -4.774423702E-10 
-        A_0_3   =     -2.462744787E-14 
-        A_0_4   =       2.28913156E-17 
-        A_1_1   =      1.076615801E-09 
-        A_1_2   =     -9.939904553E-14 
-        A_1_3   =     -5.845336863E-17 
-        A_2_0   =     -3.717865118E-10 
-        A_2_1   =     -4.966118494E-15 
-        A_2_2   =      6.615859199E-17 
-        A_3_0   =     -3.817793356E-15 
-        A_3_1   =      3.310020049E-17 
-        A_4_0   =     -5.166048303E-19 
-        
-        B_ORDER =                    4 
-        B_0_2   =      1.504792792E-09 
-        B_0_3   =     -2.662833066E-15 
-        B_0_4   =     -8.383877471E-20 
-        B_1_1   =      1.204553316E-10 
-        B_1_2   =       6.57748238E-14 
-        B_1_3   =     -6.998508554E-18 
-        B_2_0   =      4.136013664E-10 
-        B_2_1   =      5.339208582E-14 
-        B_2_2   =      6.063403412E-17 
-        B_3_0   =      1.486316541E-14 
-        B_3_1   =     -9.102668806E-17 
-        B_4_0   =     -5.174323631E-17
-
-        """
+        """Read SIP coefficients from the header"""
         assert hdr_wcs["CTYPE1"] == "RA---TAN-SIP"
         assert hdr_wcs["CTYPE2"] == "DEC--TAN-SIP"
 

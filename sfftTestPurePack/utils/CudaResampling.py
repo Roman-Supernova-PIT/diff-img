@@ -6,7 +6,7 @@ from math import floor
 from astropy.wcs import WCS, FITSFixedWarning
 from CupyWCSTransform import Cupy_WCS_Transform
 
-__last_update__ = "2024-09-19"
+__last_update__ = "2024-09-22"
 __author__ = "Lei Hu <leihu@andrew.cmu.edu>"
 
 class Cuda_Resampling:
@@ -290,120 +290,6 @@ class Cuda_Resampling:
             
             t0 = time.time()
             resamp_func(args=(XX_Eproj_GPU, YY_Eproj_GPU, PixA_Eobj_GPU, PixA_resamp_GPU), block=TpB_PIX, grid=BpG_PIX)
-            if self.VERBOSE_LEVEL in [1, 2]:
-                print('MeLOn CheckPoint: Cuda resampling takes [%.6f s]' %(time.time() - t0))
-            
-        if self.RESAMP_METHOD == "LANCZOS3":
-            
-            # * perform LANCZOS-3 resampling using CUDA
-            # input: XX_Eproj, YY_Eproj | (NTX, NTY)
-            # output: PixA_resamp | (NTX, NTY)
-            
-            _refdict = {'NTX': NTX, 'NTY': NTY}
-            _funcstr = r"""
-            extern "C" __global__ void kmain(double XX_Eproj_GPU[%(NTX)s][%(NTY)s], double YY_Eproj_GPU[%(NTX)s][%(NTY)s], 
-                double LKERNEL_X_GPU[6][%(NTX)s][%(NTY)s], double LKERNEL_Y_GPU[6][%(NTX)s][%(NTY)s])
-            {
-                int ROW = blockIdx.x*blockDim.x+threadIdx.x;
-                int COL = blockIdx.y*blockDim.y+threadIdx.y;
-
-                int NTX = %(NTX)s;
-                int NTY = %(NTY)s;
-                
-                double PI = 3.141592653589793;
-                double PIS = 9.869604401089358;
-                
-                if (ROW < NTX && COL < NTY) {
-                    
-                    double x = XX_Eproj_GPU[ROW][COL];
-                    double y = YY_Eproj_GPU[ROW][COL];
-                    
-                    double dx = x - floor(x); 
-                    double dy = y - floor(y);
-                    
-                    // LANCZOS3 weights in x axis
-                    double wx0 = 3.0 * sin(PI*(-2.0 - dx)) * sin(PI*(-2.0 - dx)/3.0) / (PIS*(-2.0 - dx) * (-2.0 - dx));
-                    double wx1 = 3.0 * sin(PI*(-1.0 - dx)) * sin(PI*(-1.0 - dx)/3.0) / (PIS*(-1.0 - dx) * (-1.0 - dx));
-                    double wx2 = 1.0;
-                    if (fabs(dx) > 1e-4) {
-                        wx2 = 3.0 * sin(PI*(-dx)) * sin(PI*(-dx)/3.0) / (PIS*(-dx) * (-dx));
-                    }
-                    double wx3 = 3.0 * sin(PI*(1.0 - dx)) * sin(PI*(1.0 - dx)/3.0) / (PIS*(1.0 - dx) * (1.0 - dx));
-                    double wx4 = 3.0 * sin(PI*(2.0 - dx)) * sin(PI*(2.0 - dx)/3.0) / (PIS*(2.0 - dx) * (2.0 - dx));
-                    double wx5 = 3.0 * sin(PI*(3.0 - dx)) * sin(PI*(3.0 - dx)/3.0) / (PIS*(3.0 - dx) * (3.0 - dx));
-                    
-                    LKERNEL_X_GPU[0][ROW][COL] = wx0;
-                    LKERNEL_X_GPU[1][ROW][COL] = wx1;
-                    LKERNEL_X_GPU[2][ROW][COL] = wx2;
-                    LKERNEL_X_GPU[3][ROW][COL] = wx3;
-                    LKERNEL_X_GPU[4][ROW][COL] = wx4;
-                    LKERNEL_X_GPU[5][ROW][COL] = wx5;
-                    
-                    // LANCZOS3 weights in y axis
-                    double wy0 = 3.0 * sin(PI*(-2.0 - dy)) * sin(PI*(-2.0 - dy)/3.0) / (PIS*(-2.0 - dy) * (-2.0 - dy));
-                    double wy1 = 3.0 * sin(PI*(-1.0 - dy)) * sin(PI*(-1.0 - dy)/3.0) / (PIS*(-1.0 - dy) * (-1.0 - dy));
-                    double wy2 = 1.0;
-                    if (fabs(dy) > 1e-4) {
-                        wy2 = 3.0 * sin(PI*(-dy)) * sin(PI*(-dy)/3.0) / (PIS*(-dy) * (-dy));
-                    }
-                    double wy3 = 3.0 * sin(PI*(1.0 - dy)) * sin(PI*(1.0 - dy)/3.0) / (PIS*(1.0 - dy) * (1.0 - dy));
-                    double wy4 = 3.0 * sin(PI*(2.0 - dy)) * sin(PI*(2.0 - dy)/3.0) / (PIS*(2.0 - dy) * (2.0 - dy));
-                    double wy5 = 3.0 * sin(PI*(3.0 - dy)) * sin(PI*(3.0 - dy)/3.0) / (PIS*(3.0 - dy) * (3.0 - dy));
-                    
-                    LKERNEL_Y_GPU[0][ROW][COL] = wy0;
-                    LKERNEL_Y_GPU[1][ROW][COL] = wy1;
-                    LKERNEL_Y_GPU[2][ROW][COL] = wy2;
-                    LKERNEL_Y_GPU[3][ROW][COL] = wy3;
-                    LKERNEL_Y_GPU[4][ROW][COL] = wy4;
-                    LKERNEL_Y_GPU[5][ROW][COL] = wy5;
-                }
-            }
-            """
-            _code = _funcstr % _refdict
-            _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=False)
-            weightkernel_func = _module.get_function('kmain')
-            
-            _refdict = {'NTX': NTX, 'NTY': NTY, 'NEOX': NEOX, 'NEOY': NEOY}
-            _funcstr = r"""
-            extern "C" __global__ void kmain(double XX_Eproj_GPU[%(NTX)s][%(NTY)s], double YY_Eproj_GPU[%(NTX)s][%(NTY)s], 
-                double LKERNEL_X_GPU[6][%(NTX)s][%(NTY)s], double LKERNEL_Y_GPU[6][%(NTX)s][%(NTY)s], 
-                double PixA_Eobj_GPU[%(NEOX)s][%(NEOY)s], double PixA_resamp_GPU[%(NTX)s][%(NTY)s])
-            {
-                int ROW = blockIdx.x*blockDim.x+threadIdx.x;
-                int COL = blockIdx.y*blockDim.y+threadIdx.y;
-
-                int NTX = %(NTX)s;
-                int NTY = %(NTY)s;
-                int NEOX = %(NEOX)s;
-                int NEOY = %(NEOY)s;
-
-                if (ROW < NTX && COL < NTY) {
-                
-                    double x = XX_Eproj_GPU[ROW][COL];
-                    double y = YY_Eproj_GPU[ROW][COL];
-                    
-                    int r0 = floor(x) - 3;
-                    int c0 = floor(y) - 3;
-                    
-                    for(int i = 0; i < 6; ++i){
-                        for(int j = 0; j < 6; ++j){
-                            double w = LKERNEL_X_GPU[i][ROW][COL] * LKERNEL_Y_GPU[j][ROW][COL];
-                            PixA_resamp_GPU[ROW][COL] += w * PixA_Eobj_GPU[r0 + i][c0 + j];
-                        }
-                    }
-                }
-            }
-            """
-            _code = _funcstr % _refdict
-            _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=False)
-            resamp_func = _module.get_function('kmain')
-            
-            t0 = time.time()
-            LKERNEL_X_GPU = cp.zeros((6, NTX, NTY), dtype=np.float64)
-            LKERNEL_Y_GPU = cp.zeros((6, NTX, NTY), dtype=np.float64)
-            weightkernel_func(args=(XX_Eproj_GPU, YY_Eproj_GPU, LKERNEL_X_GPU, LKERNEL_Y_GPU), block=TpB_PIX, grid=BpG_PIX)
-            resamp_func(args=(XX_Eproj_GPU, YY_Eproj_GPU, LKERNEL_X_GPU, LKERNEL_Y_GPU, 
-                PixA_Eobj_GPU, PixA_resamp_GPU), block=TpB_PIX, grid=BpG_PIX)
             if self.VERBOSE_LEVEL in [1, 2]:
                 print('MeLOn CheckPoint: Cuda resampling takes [%.6f s]' %(time.time() - t0))
 
