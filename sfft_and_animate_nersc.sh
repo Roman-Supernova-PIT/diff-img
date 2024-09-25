@@ -1,8 +1,8 @@
 #!/bin/bash
 
 #SBATCH -A m4385
-#SBATCH -C gpu
-#SBATCH -q regular # regular or debug
+#SBATCH -C cpu
+#SBATCH -q debug # regular or debug
 #SBATCH --job-name=sfft
 ##SBATCH --mem=64G # Comment this out while on -q debug because you get a whole node, so you can monitor with top to see how much you're using. 
 #SBATCH --ntasks=1 # Leave as 1 because the tasks are divided in python. 
@@ -10,11 +10,11 @@
 #SBATCH --output=/global/cfs/cdirs/m4385/users/lauren/out_logs/sfft/sfft-%J.out
 #SBATCH --mail-user=lauren.aldoroty@duke.edu
 #SBATCH --mail-type=ALL
-#SBATCH --gpus-per-task 1
+##SBATCH --gpus-per-task 1
 #SBATCH --cpus-per-task 1
-#SBATCH --time=2:00:00 # regular QOS
-##SBATCH --time=30:00 # debug QOS
-#SBATCH --array=1-7
+##SBATCH --time=2:00:00 # regular QOS
+#SBATCH --time=30:00 # debug QOS
+#SBATCH --array=5
 
 # Activate conda environment
 source ~/.bashrc
@@ -45,20 +45,20 @@ for sn in "${sne[@]}"
 do
     echo "$sn"
     # Step 1: Get all images the object is in.
-    # python -u get_object_instances.py "$sn" # We actually only want to do this step once per object.
+    python -u get_object_instances.py "$sn" --n-templates 1 # We actually only want to do this step once per object.
                                             # There is no reason to do it once per job array
                                             # element (i.e., once per object per band).
     # Step 2: Sky subtract, align images to be in DIA. 
     # WAIT FOR COMPLETION. 
     # Step 3: Get, align, save PSFs; cross-convolve. 
-    srun python -u preprocess.py "$sn" --n-templates 1 --verbose True --slurm_array
+    # srun python -u preprocess.py "$sn" --n-templates 1 --verbose True --slurm_array
     # WAIT FOR COMPLETION.
     # Step 4: Differencing (GPU). 
-    srun python -u sfftdiff.py "$sn" --n-templates 1 --verbose True --slurm_array
+    # srun python -u sfftdiff.py "$sn" --n-templates 1 --verbose True --slurm_array
     # WAIT FOR COMPLETION.
     # Step 5: Generate decorrelation kernel, apply to diff. image and science image, make stamps. 
-    srun python -u postprocess.py "$sn" --n-templates 1 --verbose True --slurm_array
+    # srun python -u postprocess.py "$sn" --n-templates 1 --verbose True --slurm_array
     # WAIT FOR COMPLETION.
     # Step 6: Make LC and generate plots.
-    python -u mk_lc.py "$sn" --n-templates 1 --slurm_array
+    # python -u mk_lc.py "$sn" --n-templates 1 --slurm_array
 done
