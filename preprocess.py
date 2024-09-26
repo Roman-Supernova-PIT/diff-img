@@ -2,7 +2,6 @@
 # (see "with nvtx.annotate" blocks below)
 import nvtx
 
-
 # IMPORTS Standard:
 import logging
 import tracemalloc
@@ -71,12 +70,12 @@ def check_overlap(ra,dec,imgpath,data_ext=0,overlap_size=500,verbose=False,show_
         cutout = Cutout2D(img,pxcoords,overlap_size,mode='strict')
         if show_cutout:
             z1,z2 = ZScaleInterval(n_samples=1000,
-            contrast=0.25,
-            max_reject=0.5,
-            min_npixels=5,
-            krej=2.5,
-            max_iterations=5,
-            ).get_limits(cutout.data)
+                                   contrast=0.25,
+                                   max_reject=0.5,
+                                   min_npixels=5,
+                                   krej=2.5,
+                                   max_iterations=5,
+                                   ).get_limits(cutout.data)
 
             plt.figure()
             plt.imshow(cutout.data, vmin=z1, vmax=z2, cmap='Greys')
@@ -200,16 +199,16 @@ def run(oid, band, n_templates=1, cpus_per_task=1, verbose=False):
          # First, unzip and sky subtract the images in their own multiprocessing pool.
         all_list = template_list + science_list
         for img in all_list:
-             skysub_img_path, skyrms, DETECT_MASK = skysub(img)
-             os.makedirs(os.path.join(dia_out_dir, 'skyrms'), exist_ok=True)
-             skysub_img_basename = os.path.basename(skysub_img_path)
-             skyrmspath = os.path.join(dia_out_dir, f'skyrms/{skysub_img_basename}.json')
-             # TODO : worry about using skyrms.mean(), think if we should use something else
-             json.dump( { 'skyrms': skyrms.mean() }, open( skyrmspath, "w" ) )
-             os.makedirs( os.path.join( dia_out_dir, 'detect_mask' ), exist_ok=True )
-             fname = os.path.join( dia_out_dir, f'detect_mask/{skysub_img_basename}.npy' )
-             logger.info( f"Writing detection mask to {fname}" )
-             np.save( fname, DETECT_MASK )
+            skysub_img_path, skyrms, DETECT_MASK = skysub(img)
+            os.makedirs(os.path.join(dia_out_dir, 'skyrms'), exist_ok=True)
+            skysub_img_basename = os.path.basename(skysub_img_path)
+            skyrmspath = os.path.join(dia_out_dir, f'skyrms/{skysub_img_basename}.json')
+            # TODO : worry about using skyrms.mean(), think if we should use something else
+            json.dump( { 'skyrms': skyrms.mean() }, open( skyrmspath, "w" ) )
+            os.makedirs( os.path.join( dia_out_dir, 'detect_mask' ), exist_ok=True )
+            fname = os.path.join( dia_out_dir, f'detect_mask/{skysub_img_basename}.npy' )
+            logger.info( f"Writing detection mask to {fname}" )
+            np.save( fname, DETECT_MASK )
              
 
 #        with Pool(cpus_per_task) as pool:
