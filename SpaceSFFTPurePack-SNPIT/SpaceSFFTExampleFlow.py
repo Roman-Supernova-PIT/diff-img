@@ -9,6 +9,9 @@ GDIR = '/hildafs/projects/phy220048p/leihu/AstroWork/RomanSNPIT/SpaceSFFTPurePac
 sys.path.insert(1, GDIR + "/scripts")
 from SpaceSFFTCupyFlow import SpaceSFFT_CupyFlow, SpaceSFFT_CupyFlow_NVTX
 
+__last_update__ = "2024-09-22"
+__author__ = "Lei Hu <leihu@andrew.cmu.edu>"
+
 input_dir = GDIR + '/input'
 output_dir = GDIR + '/output'
 
