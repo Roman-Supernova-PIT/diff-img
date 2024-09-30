@@ -144,7 +144,8 @@ def postprocess(ra,dec,band,pair_info,
     else:
         print(f'Difference imaging files for {band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca} do not exist. Skipping.')
 
-def run(oid, band, n_templates=1, cpus_per_task=1, verbose=False):
+# def run(oid, band, n_templates=1, cpus_per_task=1, verbose=False):
+def run(oid, band, sci_list_path, template_list_path, cpus_per_task=1, verbose=False):
 
     ###########################################################################
 
@@ -159,14 +160,28 @@ def run(oid, band, n_templates=1, cpus_per_task=1, verbose=False):
     print('postprocess started!')
 
     ra,dec,start,end = get_transient_info(oid)
-    template_list = get_templates(oid,band,infodir,n_templates,verbose=verbose)
-    science_list = get_science(oid,band,infodir,verbose=verbose)
+    # template_list = get_templates(oid,band,infodir,n_templates,verbose=verbose)
+    # science_list = get_science(oid,band,infodir,verbose=verbose)
+
+    science_tab = Table.read(sci_list_path)
+    science_tab = science_tab[science_tab['filter'] == band]
+    science_list = [dict(zip(science_tab.colnames,row)) for row in science_tab]
+
+    template_tab = Table.read(template_list_path)
+    template_tab = template_tab[template_tab['filter'] == band]
+    template_list = [dict(zip(template_tab.colnames,row)) for row in template_tab]
+
     pairs = list(itertools.product(template_list,science_list))
 
     partial_postprocess = partial(postprocess,ra,dec,band,verbose=verbose)
 
     for pair in pairs:
-        partial_postprocess(pair)
+        try:
+            partial_postprocess(pair)
+        except Exception as exe:
+            print(f'WARNING! EXCEPTION OCCURRED ON {pair}!')
+            print(exe)
+            print(' ******************************************************** \n')
 #    with Manager() as mgr:
 #        mgr_pairs = mgr.list(pairs)
 #        with Pool(cpus_per_task) as pool:
@@ -222,10 +237,22 @@ def parse_and_run():
     )
 
     parser.add_argument(
-        "--n-templates",
-        type=int,
-        help='Number of template images to use.'
+        "--sci-list-path",
+        type=str,
+        help='Path to list of science images.'
     )
+
+    parser.add_argument(
+        "--template-list-path",
+        type=str,
+        help='Path to list of template images.'
+    )
+
+    # parser.add_argument(
+    #     "--n-templates",
+    #     type=int,
+    #     help='Number of template images to use.'
+    # )
 
     parser.add_argument(
         '--cpus-per-task',
@@ -262,7 +289,8 @@ def parse_and_run():
         # TODO : default when no slurm
         cpus_per_task = int(os.environ['SLURM_CPUS_PER_TASK'])
 
-    run(args.oid, args.band, n_templates=args.n_templates, cpus_per_task=cpus_per_task, verbose=args.verbose)
+    # run(args.oid, args.band, n_templates=args.n_templates, cpus_per_task=cpus_per_task, verbose=args.verbose)
+    run(args.oid, args.band, args.sci_list_path, args.template_list_path, cpus_per_task=cpus_per_task, verbose=args.verbose)
     print("Finished with postprocess.py!")
 
 if __name__ == '__main__':
