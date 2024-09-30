@@ -129,15 +129,10 @@ def preprocess(ra,dec,band,pair_info,
     sci_skysub_path = os.path.join(skysub_dir,f'skysub_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}.fits')
     t_skysub = os.path.join(skysub_dir,f'skysub_Roman_TDS_simple_model_{band}_{t_pointing}_{t_sca}.fits')
 
-    logger.info( "*** Starting imalign" )
-    t_align_savename = f'skysub_Roman_TDS_simple_model_{band}_{t_pointing}_{t_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits'
-    with nvtx.annotate( "imalign", color="yellow" ):
-        t_align = imalign(template_path=sci_skysub_path,sci_path=t_skysub,savename=t_align_savename,force=True) # NOTE: This is correct, not flipped.
-
     logger.debug(f'Path to sky-subtracted science image: \n {sci_skysub_path}')
     logger.debug(f'Path to aligned, sky-subtracted template image: \n {t_align}')
 
-    template_overlap = check_overlap(ra,dec,t_align,verbose=verbose)
+    template_overlap = check_overlap(ra,dec,t_skysub,verbose=verbose)
     science_overlap = check_overlap(ra,dec,sci_skysub_path,verbose=verbose)
 
     if not template_overlap or not science_overlap:
@@ -147,6 +142,11 @@ def preprocess(ra,dec,band,pair_info,
         return None, None
 
     else:
+        logger.info( "*** Starting imalign" )
+        t_align_savename = f'skysub_Roman_TDS_simple_model_{band}_{t_pointing}_{t_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits'
+        with nvtx.annotate( "imalign", color="yellow" ):
+            t_align = imalign(template_path=sci_skysub_path,sci_path=t_skysub,savename=t_align_savename,force=True) # NOTE: This is correct, not flipped.
+
         # TODO : think about config file location and configurability / parameters
         logger.info( "*** Starting get_imsim_psf calls" )
         with nvtx.annotate( "get_imsim_psf", color="red" ):
