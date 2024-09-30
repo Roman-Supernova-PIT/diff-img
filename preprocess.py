@@ -26,6 +26,7 @@ os.environ['OMP_NUM_THREADS'] = '1'
 os.environ['VECLIB_MAXIMUM_THREADS'] = '1'
 
 # IMPORTS Astro:
+from astropy.table import Table
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy.nddata import Cutout2D
@@ -150,12 +151,12 @@ def preprocess(ra,dec,band,pair_info,
         logger.info( "*** Starting get_imsim_psf calls" )
         with nvtx.annotate( "get_imsim_psf", color="red" ):
             sci_psf_path = get_imsim_psf(ra, dec, band, sci_pointing, sci_sca,
-                                         config_yaml_file=os.path.join( os.getenv("SIMS_DIR"), "tds.yaml" ) )
+                                         config_yaml_file=os.path.join( os.getenv("SN_INFO_DIR"), "tds.yaml" ) )
             if verbose:
                 logger.debug(f'Path to science PSF: \n {sci_psf_path}')
 
             t_imsim_psf = get_imsim_psf(ra, dec, band, t_pointing, t_sca, logger=logger,
-                                        config_yaml_file=os.path.join( os.getenv("SIMS_DIR"), "tds.yaml" ) )
+                                        config_yaml_file=os.path.join( os.getenv("SN_INFO_DIR"), "tds.yaml" ) )
 
         with nvtx.annotate( "rotate_psf", color="yellow" ):
             rot_psf_name = f'rot_psf_{band}_{t_pointing}_{t_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits'
@@ -172,7 +173,8 @@ def preprocess(ra,dec,band,pair_info,
 
         #cuda.close()
             
-def run(oid, band, n_templates=1, cpus_per_task=1, verbose=False):
+def run(oid, band, sci_list_path, template_list_path, cpus_per_task=1, verbose=False):
+# def run(oid, band, n_templates=1, cpus_per_task=1, verbose=False):
     
     ###################################################################
     # Start tracemalloc.
@@ -185,12 +187,22 @@ def run(oid, band, n_templates=1, cpus_per_task=1, verbose=False):
     if verbose:
         start_time = time.time()
 
-    logger.info( "***** Getting transient info" )
+    # logger.info( "***** Getting transient info" )
+    # ra,dec,start,end = get_transient_info(oid)
+    # logger.info( "***** Getting template_list" )
+    # template_list = get_templates(oid,band,infodir,n_templates,verbose=verbose)
+    # logger.info( "***** Getting science_list" )
+    # science_list = get_science(oid,band,infodir,verbose=verbose)
+
     ra,dec,start,end = get_transient_info(oid)
-    logger.info( "***** Getting template_list" )
-    template_list = get_templates(oid,band,infodir,n_templates,verbose=verbose)
-    logger.info( "***** Getting science_list" )
-    science_list = get_science(oid,band,infodir,verbose=verbose)
+
+    science_tab = Table.read(sci_list_path)
+    science_tab = science_tab[science_tab['filter'] == band]
+    science_list = [dict(zip(science_tab.colnames,row)) for row in science_tab]
+
+    template_tab = Table.read(template_list_path)
+    template_tab = template_tab[template_tab['filter'] == band]
+    template_list = [dict(zip(template_tab.colnames,row)) for row in template_tab]
     
     pairs = list(itertools.product(template_list,science_list))
 
@@ -198,6 +210,7 @@ def run(oid, band, n_templates=1, cpus_per_task=1, verbose=False):
     with nvtx.annotate( "skysub", color="red" ):
          # First, unzip and sky subtract the images in their own multiprocessing pool.
         all_list = template_list + science_list
+        all_list = list(dict(t) for t in {tuple(d.items) for d in all_list}) # Remove duplicates 
         for img in all_list:
             skysub_img_path, skyrms, DETECT_MASK = skysub(img)
             os.makedirs(os.path.join(dia_out_dir, 'skyrms'), exist_ok=True)
@@ -224,7 +237,12 @@ def run(oid, band, n_templates=1, cpus_per_task=1, verbose=False):
 
     logger.info( "***** Calling preprocess" )
     for pair in pairs:
-        preprocess(ra,dec,band,pair,verbose=verbose)
+        try:
+            preprocess(ra,dec,band,pair,verbose=verbose)
+        except Exception as exe:
+            print(f'WARNING! EXCEPTION OCCURRED ON {pair}!')
+            print(exe)
+            print(' ******************************************************** \n')
 #        with Manager() as mgr:
 #            mgr_pairs = mgr.list(pairs)
 #            with Pool(cpus_per_task) as pool_2:
@@ -280,10 +298,22 @@ def parse_and_run():
     )
 
     parser.add_argument(
-        "--n-templates",
-        type=int,
-        help='Number of template images to use.'
+        "--sci-list-path",
+        type=str,
+        help='Path to list of science images.'
     )
+
+    parser.add_argument(
+        "--template-list-path",
+        type=str,
+        help='Path to list of template images.'
+    )
+
+    # parser.add_argument(
+    #     "--n-templates",
+    #     type=int,
+    #     help='Number of template images to use.'
+    # )
 
     parser.add_argument(
         '--cpus-per-task',
@@ -320,7 +350,8 @@ def parse_and_run():
         # TODO : default when no slurm
         cpus_per_task = int(os.environ['SLURM_CPUS_PER_TASK'])
 
-    run(args.oid, args.band, args.n_templates, cpus_per_task=cpus_per_task, verbose=args.verbose)
+    # run(args.oid, args.band, args.n_templates, cpus_per_task=cpus_per_task, verbose=args.verbose)
+    run(args.oid, args.band, args.sci_list_path, args.template_list_path, cpus_per_task=cpus_per_task, verbose=args.verbose)
     print("Finished with preprocess.py!")
 
 if __name__ == '__main__':
