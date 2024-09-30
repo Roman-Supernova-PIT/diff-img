@@ -38,7 +38,7 @@ import astropy.units as u
 
 # IMPORTS Internal:
 from phrosty.imagesubtraction import sky_subtract, imalign, get_imsim_psf, rotate_psf, crossconvolve
-from phrosty.utils import get_transient_info, set_logger, get_templates, get_science
+from phrosty.utils import get_transient_info, set_logger, get_templates, get_science, _build_filepath
 
 ###########################################################################
 # Get environment variables.
@@ -93,15 +93,21 @@ def check_overlap(ra,dec,imgpath,data_ext=0,overlap_size=500,verbose=False,show_
             print(f'{imgpath} does not sufficiently overlap with the SN. ')
         return False
 
-def skysub(infodict):
+def skysub(ra,dec,infodict,verbose=False):
     """
     Wrapper for phrosty.imagesubtraction.sky_subtract() that allows input of
     a single dictionary for filter, pointing, and sca instead of individual
     values for each argument. Use this to enable use of multiprocessing.Pool.map.
     """
     band, pointing, sca = infodict['filter'], infodict['pointing'], infodict['sca']
-    output_path, skylvl, skyrms, DETECT_MASK = sky_subtract(band=band, pointing=pointing, sca=sca, force=True)
-    return output_path, skyrms, DETECT_MASK
+    checkpath = _build_filepath(path=None,band=band,pointing=pointing,sca=sca,filetype='image',rootdir=sims_dir)
+    overlap = check_overlap(ra,dec,checkpath,verbose=verbose,data_ext=1)
+
+    if not overlap:
+        return None, None, None
+    else:
+        output_path, skylvl, skyrms, DETECT_MASK = sky_subtract(band=band, pointing=pointing, sca=sca, force=True)
+        return output_path, skyrms, DETECT_MASK
 
 def preprocess(ra,dec,band,pair_info,
                skysub_dir=os.path.join(dia_out_dir,'skysub'),
@@ -126,14 +132,11 @@ def preprocess(ra,dec,band,pair_info,
     sci_pointing, sci_sca = sci_info['pointing'], sci_info['sca']
     t_pointing, t_sca = t_info['pointing'], t_info['sca']
 
-    sci_skysub_path = os.path.join(skysub_dir,f'skysub_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}.fits')
-    t_skysub = os.path.join(skysub_dir,f'skysub_Roman_TDS_simple_model_{band}_{t_pointing}_{t_sca}.fits')
+    orig_scipath = _build_filepath(path=None,band=band,pointing=sci_pointing,sca=sci_sca,filetype='image',rootdir=sims_dir)
+    orig_tpath = _build_filepath(path=None,band=band,pointing=t_pointing,sca=t_sca,filetype='image',rootdir=sims_dir)
 
-    logger.debug(f'Path to sky-subtracted science image: \n {sci_skysub_path}')
-    logger.debug(f'Path to aligned, sky-subtracted template image: \n {t_align}')
-
-    template_overlap = check_overlap(ra,dec,t_skysub,verbose=verbose)
-    science_overlap = check_overlap(ra,dec,sci_skysub_path,verbose=verbose)
+    science_overlap = check_overlap(ra,dec,orig_scipath,verbose=verbose,data_ext=1)
+    template_overlap = check_overlap(ra,dec,orig_tpath,verbose=verbose,data_ext=1)
 
     if not template_overlap or not science_overlap:
         if verbose:
@@ -142,6 +145,12 @@ def preprocess(ra,dec,band,pair_info,
         return None, None
 
     else:
+        sci_skysub_path = os.path.join(skysub_dir,f'skysub_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}.fits')
+        t_skysub = os.path.join(skysub_dir,f'skysub_Roman_TDS_simple_model_{band}_{t_pointing}_{t_sca}.fits')
+
+        logger.debug(f'Path to sky-subtracted science image: \n {sci_skysub_path}')
+        logger.debug(f'Path to aligned, sky-subtracted template image: \n {t_align}')
+
         logger.info( "*** Starting imalign" )
         t_align_savename = f'skysub_Roman_TDS_simple_model_{band}_{t_pointing}_{t_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits'
         with nvtx.annotate( "imalign", color="yellow" ):
@@ -210,18 +219,22 @@ def run(oid, band, sci_list_path, template_list_path, cpus_per_task=1, verbose=F
     with nvtx.annotate( "skysub", color="red" ):
          # First, unzip and sky subtract the images in their own multiprocessing pool.
         all_list = template_list + science_list
-        all_list = list(dict(t) for t in {tuple(d.items) for d in all_list}) # Remove duplicates 
+        all_list = [dict(t) for t in {tuple(d.items()) for d in all_list}] # Remove duplicates 
         for img in all_list:
-            skysub_img_path, skyrms, DETECT_MASK = skysub(img)
-            os.makedirs(os.path.join(dia_out_dir, 'skyrms'), exist_ok=True)
-            skysub_img_basename = os.path.basename(skysub_img_path)
-            skyrmspath = os.path.join(dia_out_dir, f'skyrms/{skysub_img_basename}.json')
-            # TODO : worry about using skyrms.mean(), think if we should use something else
-            json.dump( { 'skyrms': skyrms.mean() }, open( skyrmspath, "w" ) )
-            os.makedirs( os.path.join( dia_out_dir, 'detect_mask' ), exist_ok=True )
-            fname = os.path.join( dia_out_dir, f'detect_mask/{skysub_img_basename}.npy' )
-            logger.info( f"Writing detection mask to {fname}" )
-            np.save( fname, DETECT_MASK )
+            skysub_img_path, skyrms, DETECT_MASK = skysub(ra,dec,img,verbose)
+            outvars = [skysub_img_path, skyrms, DETECT_MASK]
+            if all(v is None for v in [skysub_img_path, skyrms, DETECT_MASK]):
+                logger.info(f"There was not sufficient overlap with the SN for sky subtraction to be worth the time!")
+            else:
+                os.makedirs(os.path.join(dia_out_dir, 'skyrms'), exist_ok=True)
+                skysub_img_basename = os.path.basename(skysub_img_path)
+                skyrmspath = os.path.join(dia_out_dir, f'skyrms/{skysub_img_basename}.json')
+                # TODO : worry about using skyrms.mean(), think if we should use something else
+                json.dump( { 'skyrms': skyrms.mean() }, open( skyrmspath, "w" ) )
+                os.makedirs( os.path.join( dia_out_dir, 'detect_mask' ), exist_ok=True )
+                fname = os.path.join( dia_out_dir, f'detect_mask/{skysub_img_basename}.npy' )
+                logger.info( f"Writing detection mask to {fname}" )
+                np.save( fname, DETECT_MASK )
              
 
 #        with Pool(cpus_per_task) as pool:
@@ -237,12 +250,7 @@ def run(oid, band, sci_list_path, template_list_path, cpus_per_task=1, verbose=F
 
     logger.info( "***** Calling preprocess" )
     for pair in pairs:
-        try:
-            preprocess(ra,dec,band,pair,verbose=verbose)
-        except Exception as exe:
-            print(f'WARNING! EXCEPTION OCCURRED ON {pair}!')
-            print(exe)
-            print(' ******************************************************** \n')
+        preprocess(ra,dec,band,pair,verbose=verbose)
 #        with Manager() as mgr:
 #            mgr_pairs = mgr.list(pairs)
 #            with Pool(cpus_per_task) as pool_2:
