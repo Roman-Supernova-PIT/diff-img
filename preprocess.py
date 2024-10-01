@@ -31,7 +31,7 @@ import astropy.units as u
 
 # IMPORTS Internal:
 from phrosty.imagesubtraction import sky_subtract, imalign, get_imsim_psf, rotate_psf, crossconvolve
-from phrosty.utils import _build_filepath, get_transient_info, set_logger, get_templates, get_science
+from phrosty.utils import files_that_exist, get_transient_info, set_logger, get_templates, get_science
 
 ###########################################################################
 # Get environment variables. 
@@ -156,35 +156,6 @@ def preprocess(ra,dec,band,pair_info,
         sci_conv, temp_conv = crossconvolve(sci_skysub_path,sci_psf_path,t_align,t_imsim_psf,sci_outname=sci_conv_name,ref_outname=ref_conv_name,force=True)
         if verbose:
             logger.debug(f'Path to cross-convolved science image: \n {sci_conv} \n Path to cross-convolved template image: \n {temp_conv}')
-
-
-def files_that_exist(image_info):
-    """
-    Returns list of dicts of {band, pointing, and sca} that exist on disk.
-
-    Works with local files or S3.
-    Order of list is preserved.
-    """
-    import boto3
-    import botocore
-    from smart_open import open
-
-    config = botocore.client.Config(signature_version=botocore.UNSIGNED)
-    params = {"client": boto3.client("s3", config=config)}
-
-    new_image_info = []
-    for infodict in image_info:
-        band, pointing, sca = infodict["filter"], infodict["pointing"], infodict["sca"]
-        original_imgpath = _build_filepath(path=None, band=band, pointing=pointing, sca=sca, filetype="image")
-        try:
-            fh = open(original_imgpath, transport_params=params)
-            fh.close()
-            new_image_info.append(infodict)
-        except Exception as e:
-            print(e)
-            pass
-
-    return new_image_info
 
 
 def run(oid,band,n_templates=1,verbose=False):

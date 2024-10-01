@@ -30,7 +30,7 @@ import astropy.units as u
 
 # IMPORTS Internal:
 from phrosty.imagesubtraction import difference
-from phrosty.utils import get_transient_radec, get_transient_info, transient_in_or_out, set_logger, get_templates, get_science
+from phrosty.utils import files_that_exist, get_transient_radec, get_transient_info, transient_in_or_out, set_logger, get_templates, get_science
 
 ###########################################################################
 # Get environment variables. 
@@ -115,6 +115,13 @@ def run(oid,band,n_templates=1,verbose=False):
     ra,dec,start,end = get_transient_info(oid)
     template_list = get_templates(oid,band,infodir,n_templates,verbose=verbose)
     science_list = get_science(oid,band,infodir,verbose=verbose)
+    template_list = files_that_exist(template_list)
+    science_list = files_that_exist(science_list)
+
+    # Horrific hack.  Please remove
+    science_list = template_list[1:]
+    template_list = [template_list[0]]
+
     pairs = list(itertools.product(template_list,science_list))
 
     for pair in pairs:
