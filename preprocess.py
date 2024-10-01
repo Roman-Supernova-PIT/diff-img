@@ -154,6 +154,33 @@ def preprocess(ra,dec,band,pair_info,
         if verbose:
             logger.debug(f'Path to cross-convolved science image: \n {sci_conv} \n Path to cross-convolved template image: \n {temp_conv}')
 
+
+def files_that_exist(file_list):
+    """
+    Takes a list of file paths and returns the ones that exist.
+
+    Works with local files or S3.
+    Returned file list will be in same order.
+    """
+    import boto3
+    import botocore
+    from smart_open import open
+
+    config = botocore.client.Config(signature_version=botocore.UNSIGNED)
+    params = {"client": boto3.client("s3", config=config)}
+
+    new_file_list = []
+    for f in file_list:
+        try:
+            fh = open(f, transport_params=params)
+            fh.close()
+            new_file_list.append(f)
+        except:
+            pass
+
+    return new_file_list
+
+
 def run(oid,band,n_templates=1,verbose=False):
 
     ###################################################################
@@ -170,6 +197,12 @@ def run(oid,band,n_templates=1,verbose=False):
     science_list = get_science(oid,band,infodir,verbose=verbose)
     pairs = list(itertools.product(template_list,science_list))
 
+    # Check and remove files that don't exist
+    # This is intended to be useful when working with a reduced dataset
+    # that may not contain all of the images for a particular supernova
+    # Either a local laptop, or e.g. the RomanDESCSims Preview dataset.
+    template_list = files_that_exist(template_list)
+    science_list = files_that_exist(science_list)
     # First, unzip and sky subtract the images in their own multiprocessing pool.
     all_list = template_list + science_list
     cpus_per_task = int(os.environ['SLURM_CPUS_PER_TASK'])
