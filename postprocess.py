@@ -154,7 +154,7 @@ def run(oid,band,n_templates=1,verbose=False):
     pairs = list(itertools.product(template_list,science_list))
 
     partial_postprocess = partial(postprocess,ra,dec,band,verbose=verbose)
-    cpus_per_task = int(os.environ['SLURM_CPUS_PER_TASK'])
+    cpus_per_task = int(os.getenv('SLURM_CPUS_PER_TASK', 1))
 
     with Manager() as mgr:
         mgr_pairs = mgr.list(pairs)

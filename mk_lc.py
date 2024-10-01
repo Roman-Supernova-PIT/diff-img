@@ -346,7 +346,7 @@ def run(oid,band,n_templates=1,verbose=False):
 
     partial_make_phot_info_dict = partial(make_phot_info_dict,oid,band)
 
-    cpus_per_task = int(os.environ['SLURM_CPUS_PER_TASK'])
+    cpus_per_task = int(os.getenv('SLURM_CPUS_PER_TASK', 1))
     with Manager() as mgr:
         mgr_pairs = mgr.list(pairs)
         with Pool(cpus_per_task) as pool:

@@ -184,7 +184,8 @@ def run(oid,band,n_templates=1,verbose=False):
 
     # First, unzip and sky subtract the images in their own multiprocessing pool.
     all_list = template_list + science_list
-    cpus_per_task = int(os.environ['SLURM_CPUS_PER_TASK'])
+    cpus_per_task = int(os.getenv('SLURM_CPUS_PER_TASK', 1))
+
     with Pool(cpus_per_task) as pool:
         process = pool.map(skysub, all_list)
         pool.close()
