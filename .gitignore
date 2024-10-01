@@ -1,0 +1,7 @@
+*.log
+*.DS_Store
+*.nfs000000000*
+*.fits.fz
+*.png
+*.qdstrm
+.ipynb_checkpoints/
