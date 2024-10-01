@@ -18,8 +18,7 @@ def mk_bash(sn,n_templates,jobname='sfft'):
                 '#SBATCH --mail-type=ALL \n' +  \
                 '#SBATCH --gpus-per-task 1 \n' +  \
                 '#SBATCH --cpus-per-task 1 \n' +  \
-                '##SBATCH --time=2:00:00 # regular QOS \n' +  \
-                '#SBATCH --time=30:00 # debug QOS \n' +  \
+                '#SBATCH --time=2:00:00 # regular QOS \n' +  \
                 '#SBATCH --array=1-7 \n' +  \
                 '\n' +  \
                 '# Activate conda environment \n' +  \
