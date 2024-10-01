@@ -1,0 +1,160 @@
+---- start! ----
+MeLOn CheckPoint: Cuda resampling takes [0.001357 s]
+MeLOn CheckPoint: Cuda resampling takes [0.000045 s]
+MeLOn CheckPoint: Cuda resampling takes [0.000055 s]
+MeLOn CheckPoint: TRIGGER Function Compilations of SFFT-SUBTRACTION!
+
+ --//--//--//--//-- TRIGGER SFFT COMPILATION --//--//--//--//-- 
+
+ ---//--- KerPolyOrder 2 | BGPolyOrder 0 | KerHW [9] ---//--- 
+
+ --//--//--//--//-- EXIT SFFT COMPILATION --//--//--//--//-- 
+
+MeLOn Report: Function Compilations of SFFT-SUBTRACTION TAKES [0.000 s]
+
+                                __    __    __    __
+                               /  \  /  \  /  \  /  \
+                              /    \/    \/    \/    \
+            █████████████████/  /██/  /██/  /██/  /█████████████████████████
+                            /  / \   / \   / \   / \  \____
+                           /  /   \_/   \_/   \_/   \    o \__,
+                          / _/                       \_____/  `
+                          |/
+        
+                      █████████  ███████████ ███████████ ███████████        
+                     ███░░░░░███░░███░░░░░░█░░███░░░░░░█░█░░░███░░░█            
+                    ░███    ░░░  ░███   █ ░  ░███   █ ░ ░   ░███  ░ 
+                    ░░█████████  ░███████    ░███████       ░███    
+                     ░░░░░░░░███ ░███░░░█    ░███░░░█       ░███    
+                     ███    ░███ ░███  ░     ░███  ░        ░███    
+                    ░░█████████  █████       █████          █████   
+                     ░░░░░░░░░  ░░░░░       ░░░░░          ░░░░░         
+        
+                    Saccadic Fast Fourier Transform (SFFT) algorithm
+                    sfft supported by @LeiHu
+        
+                    GitHub: https://github.com/thomasvrussell/sfft
+                    Related Paper: https://arxiv.org/abs/2109.09334
+                    
+            ████████████████████████████████████████████████████████████████
+            
+            
+
+ --||--||--||--||-- TRIGGER SFFT SUBTRACTION --||--||--||--||-- 
+
+ ---||--- KerPolyOrder 2 | BGPolyOrder 0 | KerHW [9] ---||--- 
+
+MeLOn CheckPoint: SFFT-SUBTRACTION Preliminary Steps takes [0.0443s]
+/////   a   ///// Read Input Images  (0.0000s)
+/////   b   ///// Spatial Polynomial (0.0018s)
+/////   c   ///// DFT-8             (0.0410s)
+
+MeLOn CheckPoint: SFFT-SUBTRACTION Establish & Solve Linear System takes [0.3033s]
+/////   d   ///// Establish OMG                       (0.1696s)
+/////   e   ///// Establish GAM                       (0.0287s)
+/////   f   ///// Establish PSI                       (0.0282s)
+/////   g   ///// Establish PHI                       (0.0062s)
+/////   h   ///// Establish THE & DEL                 (0.0331s)
+/////   i   ///// Solve Linear System                 (0.0357s)
+
+ --||--||--||--||-- EXIT SFFT SUBTRACTION --||--||--||--||-- 
+
+ --||--||--||--||-- TRIGGER SFFT SUBTRACTION --||--||--||--||-- 
+
+ ---||--- KerPolyOrder 2 | BGPolyOrder 0 | KerHW [9] ---||--- 
+
+MeLOn CheckPoint: SFFT-SUBTRACTION Preliminary Steps takes [0.0025s]
+/////   a   ///// Read Input Images  (0.0000s)
+/////   b   ///// Spatial Polynomial (0.0001s)
+/////   c   ///// DFT-8             (0.0012s)
+
+MeLOn CheckPoint: SFFT-SUBTRACTION Perform Subtraction takes [0.2446s]
+/////   j   ///// Calculate Kab         (0.0499s)
+/////   k   ///// Construct DIFF        (0.1947s)
+
+ --||--||--||--||-- EXIT SFFT SUBTRACTION --||--||--||--||-- 
+
+MeLOn Report: SFFT-SUBTRACTION TAKES [0.599 s]
+MeLOn CheckPoint: Cuda resampling takes [0.000054 s]
+MeLOn CheckPoint: Cuda resampling takes [0.000045 s]
+MeLOn CheckPoint: Cuda resampling takes [0.000045 s]
+MeLOn CheckPoint: TRIGGER Function Compilations of SFFT-SUBTRACTION!
+
+ --//--//--//--//-- TRIGGER SFFT COMPILATION --//--//--//--//-- 
+
+ ---//--- KerPolyOrder 2 | BGPolyOrder 0 | KerHW [9] ---//--- 
+
+ --//--//--//--//-- EXIT SFFT COMPILATION --//--//--//--//-- 
+
+MeLOn Report: Function Compilations of SFFT-SUBTRACTION TAKES [0.000 s]
+
+                                __    __    __    __
+                               /  \  /  \  /  \  /  \
+                              /    \/    \/    \/    \
+            █████████████████/  /██/  /██/  /██/  /█████████████████████████
+                            /  / \   / \   / \   / \  \____
+                           /  /   \_/   \_/   \_/   \    o \__,
+                          / _/                       \_____/  `
+                          |/
+        
+                      █████████  ███████████ ███████████ ███████████        
+                     ███░░░░░███░░███░░░░░░█░░███░░░░░░█░█░░░███░░░█            
+                    ░███    ░░░  ░███   █ ░  ░███   █ ░ ░   ░███  ░ 
+                    ░░█████████  ░███████    ░███████       ░███    
+                     ░░░░░░░░███ ░███░░░█    ░███░░░█       ░███    
+                     ███    ░███ ░███  ░     ░███  ░        ░███    
+                    ░░█████████  █████       █████          █████   
+                     ░░░░░░░░░  ░░░░░       ░░░░░          ░░░░░         
+        
+                    Saccadic Fast Fourier Transform (SFFT) algorithm
+                    sfft supported by @LeiHu
+        
+                    GitHub: https://github.com/thomasvrussell/sfft
+                    Related Paper: https://arxiv.org/abs/2109.09334
+                    
+            ████████████████████████████████████████████████████████████████
+            
+            
+
+ --||--||--||--||-- TRIGGER SFFT SUBTRACTION --||--||--||--||-- 
+
+ ---||--- KerPolyOrder 2 | BGPolyOrder 0 | KerHW [9] ---||--- 
+
+MeLOn CheckPoint: SFFT-SUBTRACTION Preliminary Steps takes [0.0030s]
+/////   a   ///// Read Input Images  (0.0000s)
+/////   b   ///// Spatial Polynomial (0.0001s)
+/////   c   ///// DFT-8             (0.0012s)
+
+MeLOn CheckPoint: SFFT-SUBTRACTION Establish & Solve Linear System takes [0.3217s]
+/////   d   ///// Establish OMG                       (0.0035s)
+/////   e   ///// Establish GAM                       (0.0007s)
+/////   f   ///// Establish PSI                       (0.0007s)
+/////   g   ///// Establish PHI                       (0.0003s)
+/////   h   ///// Establish THE & DEL                 (0.0010s)
+/////   i   ///// Solve Linear System                 (0.3155s)
+
+ --||--||--||--||-- EXIT SFFT SUBTRACTION --||--||--||--||-- 
+
+ --||--||--||--||-- TRIGGER SFFT SUBTRACTION --||--||--||--||-- 
+
+ ---||--- KerPolyOrder 2 | BGPolyOrder 0 | KerHW [9] ---||--- 
+
+MeLOn CheckPoint: SFFT-SUBTRACTION Preliminary Steps takes [0.0024s]
+/////   a   ///// Read Input Images  (0.0000s)
+/////   b   ///// Spatial Polynomial (0.0001s)
+/////   c   ///// DFT-8             (0.0012s)
+
+MeLOn CheckPoint: SFFT-SUBTRACTION Perform Subtraction takes [0.0026s]
+/////   j   ///// Calculate Kab         (0.0024s)
+/////   k   ///// Construct DIFF        (0.0002s)
+
+ --||--||--||--||-- EXIT SFFT SUBTRACTION --||--||--||--||-- 
+
+MeLOn Report: SFFT-SUBTRACTION TAKES [0.330 s]
+Done!
+Collecting data...
+Generating '/tmp/nsys-report-8dcc.qdstrm'
+[1/1] [0%                          ] report1.nsys-rep[1/1] [0%                          ] report1.nsys-rep[1/1] [===23%                      ] report1.nsys-rep[1/1] [======33%                   ] report1.nsys-rep[1/1] [======34%                   ] report1.nsys-rep[1/1] [======35%                   ] report1.nsys-rep[1/1] [=======36%                  ] report1.nsys-rep[1/1] [=======37%                  ] report1.nsys-rep[1/1] [=======38%                  ] report1.nsys-rep[1/1] [=======39%                  ] report1.nsys-rep[1/1] [========40%                 ] report1.nsys-rep[1/1] [========41%                 ] report1.nsys-rep[1/1] [========42%                 ] report1.nsys-rep[1/1] [=========43%                ] report1.nsys-rep[1/1] [=========44%                ] report1.nsys-rep[1/1] [=========45%                ] report1.nsys-rep[1/1] [=========46%                ] report1.nsys-rep[1/1] [==========47%               ] report1.nsys-rep[1/1] [==========48%               ] report1.nsys-rep[1/1] [==========49%               ] report1.nsys-rep[1/1] [===========50%              ] report1.nsys-rep[1/1] [===========51%              ] report1.nsys-rep[1/1] [===========52%              ] report1.nsys-rep[1/1] [===========53%              ] report1.nsys-rep[1/1] [============54%             ] report1.nsys-rep[1/1] [============55%             ] report1.nsys-rep[1/1] [============56%             ] report1.nsys-rep[1/1] [============57%             ] report1.nsys-rep[1/1] [=============58%            ] report1.nsys-rep[1/1] [=============59%            ] report1.nsys-rep[1/1] [=============60%            ] report1.nsys-rep[1/1] [==============61%           ] report1.nsys-rep[1/1] [==============62%           ] report1.nsys-rep[1/1] [===============65%          ] report1.nsys-rep[1/1] [===============66%          ] report1.nsys-rep[1/1] [================71%         ] report1.nsys-rep[1/1] [=================73%        ] report1.nsys-rep[1/1] [==================76%       ] report1.nsys-rep[1/1] [==================78%       ] report1.nsys-rep[1/1] [===================79%      ] report1.nsys-rep[1/1] [====================83%     ] report1.nsys-rep[1/1] [=====================88%    ] report1.nsys-rep[1/1] [======================91%   ] report1.nsys-rep[1/1] [=======================94%  ] report1.nsys-rep[1/1] [=======================96%  ] report1.nsys-rep[1/1] [========================100%] report1.nsys-rep[1/1] [========================100%] report1.nsys-rep
+Generated:
+    /hildafs/projects/phy220048p/leihu/AstroWork/RomanSNPIT/SpaceSFFTPurePack/report1.nsys-rep
+---- finish! ----
