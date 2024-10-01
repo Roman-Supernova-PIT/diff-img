@@ -339,9 +339,19 @@ def split_table(oid, band, tab, template_info):
 
     return savepath
 
-def run(oid, band, n_templates=1, cpus_per_task=1, verbose=False):
-    template_list = get_templates(oid,band,infodir,n_templates,verbose=verbose)
-    science_list = get_science(oid,band,infodir,verbose=verbose)
+# def run(oid, band, n_templates=1, cpus_per_task=1, verbose=False):
+def run(oid, band, sci_list_path, template_list_path, cpus_per_task=1, verbose=False):
+    # template_list = get_templates(oid,band,infodir,n_templates,verbose=verbose)
+    # science_list = get_science(oid,band,infodir,verbose=verbose)
+
+    science_tab = Table.read(sci_list_path)
+    science_tab = science_tab[science_tab['filter'] == band]
+    science_list = [dict(zip(science_tab.colnames,row)) for row in science_tab]
+
+    template_tab = Table.read(template_list_path)
+    template_tab = template_tab[template_tab['filter'] == band]
+    template_list = [dict(zip(template_tab.colnames,row)) for row in template_tab]
+
     pairs = list(itertools.product(template_list,science_list))
 
     partial_make_phot_info_dict = partial(make_phot_info_dict,oid,band)
@@ -539,11 +549,23 @@ def parse_and_run():
         help="Filter to use.  None to use all available.  Overridden by --slurm_array.",
     )
 
+    # parser.add_argument(
+    #     '--n-templates',
+    #     type=int,
+    #     default=1,
+    #     help='Number of template images to use.'
+    # )
+
     parser.add_argument(
-        '--n-templates',
-        type=int,
-        default=1,
-        help='Number of template images to use.'
+        "--sci-list-path",
+        type=str,
+        help='Path to list of science images.'
+    )
+
+    parser.add_argument(
+        "--template-list-path",
+        type=str,
+        help='Path to list of template images.'
     )
 
     parser.add_argument(
@@ -581,7 +603,8 @@ def parse_and_run():
         # TODO : default when no slurm
         cpus_per_task = int(os.environ['SLURM_CPUS_PER_TASK'])
 
-    run(args.oid, args.band, n_templates=args.n_templates, cpus_per_task=cpus_per_task, verbose=args.verbose)
+    # run(args.oid, args.band, n_templates=args.n_templates, cpus_per_task=cpus_per_task, verbose=args.verbose)
+    run(args.oid, args.band, args.sci_list_path, args.template_list_path, cpus_per_task=cpus_per_task, verbose=args.verbose)
     print("Finished making LCs!")
 
 
