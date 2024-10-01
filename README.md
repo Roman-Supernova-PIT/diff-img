@@ -32,3 +32,11 @@ Run on SNID 20172782 (yes, the SN IDs are 8-digit numbers beginning with 20, the
 ```
 python mk_lc.py 20172782 --band R062 --inputdir /work/lna18/
 ```
+
+Example usage on the Roman Science Platform to set things up to subtract.
+```
+oid=20000808
+band=H158
+python get_object_instances.py ${oid} 
+python preprocess.py ${oid} --band ${band}
+```
