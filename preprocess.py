@@ -31,7 +31,7 @@ import astropy.units as u
 
 # IMPORTS Internal:
 from phrosty.imagesubtraction import sky_subtract, imalign, get_imsim_psf, rotate_psf, crossconvolve
-from phrosty.utils import get_transient_info, set_logger, get_templates, get_science
+from phrosty.utils import _build_filepath, get_transient_info, set_logger, get_templates, get_science
 
 ###########################################################################
 # Get environment variables. 
@@ -127,6 +127,9 @@ def preprocess(ra,dec,band,pair_info,
     logger.debug(f'Path to sky-subtracted science image: \n {sci_skysub_path}')
     logger.debug(f'Path to aligned, sky-subtracted template image: \n {t_align}')
 
+    logger.debug(f"Path {t_skysub} not found")
+    logger.debug(f"Path {sci_skysub_path} not found")
+
     template_overlap = check_overlap(ra,dec,t_align,verbose=verbose)
     science_overlap = check_overlap(ra,dec,sci_skysub_path,verbose=verbose)
 
@@ -155,12 +158,12 @@ def preprocess(ra,dec,band,pair_info,
             logger.debug(f'Path to cross-convolved science image: \n {sci_conv} \n Path to cross-convolved template image: \n {temp_conv}')
 
 
-def files_that_exist(file_list):
+def files_that_exist(image_info):
     """
-    Takes a list of file paths and returns the ones that exist.
+    Takes a list of dictionaries with filter, pointing, and sca and return the ones that exist.
 
     Works with local files or S3.
-    Returned file list will be in same order.
+    Order of list is preserved.
     """
     import boto3
     import botocore
@@ -169,16 +172,20 @@ def files_that_exist(file_list):
     config = botocore.client.Config(signature_version=botocore.UNSIGNED)
     params = {"client": boto3.client("s3", config=config)}
 
-    new_file_list = []
-    for f in file_list:
+    new_image_info = []
+    for infodict in image_info:
+        band, pointing, sca = infodict["filter"], infodict["pointing"], infodict["sca"]
+        original_imgpath = _build_filepath(path=None, band=band, pointing=pointing, sca=sca, filetype="image")
+        print(original_imgpath)
         try:
-            fh = open(f, transport_params=params)
+            fh = open(original_imgpath, transport_params=params)
             fh.close()
-            new_file_list.append(f)
-        except:
+            new_image_info.append(infodict)
+        except Exception as e:
+            print(e)
             pass
 
-    return new_file_list
+    return new_image_info
 
 
 def run(oid,band,n_templates=1,verbose=False):
@@ -195,14 +202,21 @@ def run(oid,band,n_templates=1,verbose=False):
     ra,dec,start,end = get_transient_info(oid)
     template_list = get_templates(oid,band,infodir,n_templates,verbose=verbose)
     science_list = get_science(oid,band,infodir,verbose=verbose)
-    pairs = list(itertools.product(template_list,science_list))
 
+    print(template_list)
+    print(science_list)
     # Check and remove files that don't exist
     # This is intended to be useful when working with a reduced dataset
     # that may not contain all of the images for a particular supernova
     # Either a local laptop, or e.g. the RomanDESCSims Preview dataset.
     template_list = files_that_exist(template_list)
     science_list = files_that_exist(science_list)
+    print('after')
+    print(template_list)
+    print(science_list)
+
+    pairs = list(itertools.product(template_list, science_list))
+
     # First, unzip and sky subtract the images in their own multiprocessing pool.
     all_list = template_list + science_list
     cpus_per_task = int(os.environ['SLURM_CPUS_PER_TASK'])
