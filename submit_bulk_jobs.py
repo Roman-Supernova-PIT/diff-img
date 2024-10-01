@@ -10,7 +10,7 @@ def mk_bash(sn,n_templates,jobname='sfft'):
                 '#SBATCH -C gpu \n' + \
                 '#SBATCH -q regular # regular or debug  \n' +  \
                 f'#SBATCH --job-name={jobname}_{n_templates}  \n' +  \
-                '##SBATCH --mem=64G # Comment this out while on -q debug because you get a whole node, so you can monitor with top to see how much youre using.  \n' +  \
+                '#SBATCH --mem=64G # Comment this out while on -q debug because you get a whole node, so you can monitor with top to see how much youre using.  \n' +  \
                 '#SBATCH --ntasks=1 # Leave as 1 because the tasks are divided in python.  \n' +  \
                 '#SBATCH --ntasks-per-node=1 # Same here. Leave as 1.  \n' +  \
                 '#SBATCH --output=/global/cfs/cdirs/m4385/users/lauren/out_logs/sfft/sfft-%J.out \n' +  \
