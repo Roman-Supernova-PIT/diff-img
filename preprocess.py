@@ -160,7 +160,7 @@ def preprocess(ra,dec,band,pair_info,
 
 def files_that_exist(image_info):
     """
-    Takes a list of dictionaries with filter, pointing, and sca and return the ones that exist.
+    Returns list of dicts of {band, pointing, and sca} that exist on disk.
 
     Works with local files or S3.
     Order of list is preserved.
@@ -176,7 +176,6 @@ def files_that_exist(image_info):
     for infodict in image_info:
         band, pointing, sca = infodict["filter"], infodict["pointing"], infodict["sca"]
         original_imgpath = _build_filepath(path=None, band=band, pointing=pointing, sca=sca, filetype="image")
-        print(original_imgpath)
         try:
             fh = open(original_imgpath, transport_params=params)
             fh.close()
@@ -203,17 +202,12 @@ def run(oid,band,n_templates=1,verbose=False):
     template_list = get_templates(oid,band,infodir,n_templates,verbose=verbose)
     science_list = get_science(oid,band,infodir,verbose=verbose)
 
-    print(template_list)
-    print(science_list)
     # Check and remove files that don't exist
     # This is intended to be useful when working with a reduced dataset
     # that may not contain all of the images for a particular supernova
     # Either a local laptop, or e.g. the RomanDESCSims Preview dataset.
     template_list = files_that_exist(template_list)
     science_list = files_that_exist(science_list)
-    print('after')
-    print(template_list)
-    print(science_list)
 
     pairs = list(itertools.product(template_list, science_list))
 
