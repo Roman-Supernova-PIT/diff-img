@@ -13,7 +13,7 @@ def mk_bash(sn,n_templates,jobname='sfft'):
                 '#SBATCH --mem=64G # Comment this out while on -q debug because you get a whole node, so you can monitor with top to see how much youre using.  \n' +  \
                 '#SBATCH --ntasks=1 # Leave as 1 because the tasks are divided in python.  \n' +  \
                 '#SBATCH --ntasks-per-node=1 # Same here. Leave as 1.  \n' +  \
-                '#SBATCH --output=/global/cfs/cdirs/m4385/users/lauren/out_logs/sfft/sfft-%J.out \n' +  \
+                '#SBATCH --output=/global/cfs/cdirs/m4385/users/lauren/out_logs/sfft/%x-%J.out \n' +  \
                 '#SBATCH --mail-user=lauren.aldoroty@duke.edu \n' +  \
                 '#SBATCH --mail-type=ALL \n' +  \
                 '#SBATCH --gpus-per-task 1 \n' +  \
@@ -57,31 +57,31 @@ def mk_bash(sn,n_templates,jobname='sfft'):
                 '# Step 2: Sky subtract, align images to be in DIA. \n' + \
                 '# WAIT FOR COMPLETION. \n' + \
                 '# Step 3: Get, align, save PSFs; cross-convolve. \n' + \
-                'python -u preprocess.py \"$sn\" --verbose True \n' + \
-                '       --sci-list-path /pscratch/sd/l/laldorot/object_tables/\"$sn\"/\"$sn\"_instances_science.csv \n' + \
-                '       --template-list-path /pscratch/sd/l/laldorot/object_tables/\"$sn\"/\"$sn\"_instances_template_\"$n_templates\".csv \n' + \
+                'python -u preprocess.py \"$sn\" --verbose True \\ \n' + \
+                '       --sci-list-path "$SN_INFO_DIR"/\"$sn\"/\"$sn\"_instances_science.csv \\ \n' + \
+                '       --template-list-path "$SN_INFO_DIR"/\"$sn\"/\"$sn\"_instances_template_\"$n_templates\".csv \\ \n' + \
                 '       --slurm_array \n' + \
                 '# WAIT FOR COMPLETION. \n' + \
                 '\n' + \
                 '# Step 4: Differencing (GPU). \n' + \
-                'python -u sfftdiff.py \"$sn\" --verbose True \n' + \
-                '       --sci-list-path /pscratch/sd/l/laldorot/object_tables/\"$sn"/\"$sn"_instances_science.csv \n' + \
-                '       --template-list-path /pscratch/sd/l/laldorot/object_tables/\"$sn\"/\"$sn\"_instances_template_\"$n_templates\".csv \n' + \
+                'python -u sfftdiff.py \"$sn\" --verbose True \\ \n' + \
+                '       --sci-list-path "$SN_INFO_DIR"/\"$sn"/\"$sn"_instances_science.csv \\ \n' + \
+                '       --template-list-path "$SN_INFO_DIR"/\"$sn\"/\"$sn\"_instances_template_\"$n_templates\".csv \\ \n' + \
                 '       --slurm_array \n' + \
                 '# WAIT FOR COMPLETION. \n' + \
                 '\n' + \
                 '# Step 5: Generate decorrelation kernel, apply to diff. image and science image, make stamps. \n' + \
-                'python -u postprocess.py \"$sn\" --verbose True \n' + \
-                '       --sci-list-path /pscratch/sd/l/laldorot/object_tables/\"$sn\"/\"$sn\"_instances_science.csv \n' + \
-                '       --template-list-path /pscratch/sd/l/laldorot/object_tables/\"$sn\"/\"$sn\"_instances_template_\"$n_templates\".csv \n' + \
+                'python -u postprocess.py \"$sn\" --verbose True \\ \n' + \
+                '       --sci-list-path "$SN_INFO_DIR"/\"$sn\"/\"$sn\"_instances_science.csv \\ \n' + \
+                '       --template-list-path "$SN_INFO_DIR"/\"$sn\"/\"$sn\"_instances_template_\"$n_templates\".csv \\ \n' + \
                 '       --slurm_array \n' + \
                 '# WAIT FOR COMPLETION. \n' + \
                 '\n' + \
                 '# Step 6: Make LC and generate plots. \n' + \
-                'python -u mk_lc.py \"$sn\" --verbose True \n' + \
-                '--sci-list-path /pscratch/sd/l/laldorot/object_tables/\"$sn"/\"$sn\"_instances_science.csv \n' + \
-                '--template-list-path /pscratch/sd/l/laldorot/object_tables/\"$sn\"/\"$sn\"_instances_template_\"$n_templates\".csv \n' + \
-                '--slurm_array'
+                'python -u mk_lc.py \"$sn\" --verbose True \\ \n' + \
+                '       --sci-list-path "$SN_INFO_DIR"/\"$sn"/\"$sn\"_instances_science.csv \\ \n' + \
+                '       --template-list-path "$SN_INFO_DIR"/\"$sn\"/\"$sn\"_instances_template_\"$n_templates\".csv \\ \n' + \
+                '       --slurm_array'
 
     bash_string = bash_head + bash_main
     return bash_string
