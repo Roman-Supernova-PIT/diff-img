@@ -12,8 +12,8 @@
 #SBATCH --mail-type=ALL
 #SBATCH --gpus-per-task 1
 #SBATCH --cpus-per-task 1
-#SBATCH --time=2:00:00 # regular QOS
-##SBATCH --time=30:00 # debug QOS
+##SBATCH --time=2:00:00 # regular QOS
+#SBATCH --time=30:00 # debug QOS
 #SBATCH --array=1-7
 
 # Activate conda environment
@@ -38,27 +38,57 @@ export NVCC="/opt/nvidia/hpc_sdk/Linux_x86_64/23.9/cuda/12.2/bin/nvcc" # `wherei
 export LC_OUT_DIR="/global/cfs/cdirs/m4385/users/lauren/lcs" # Parent folder of save location for photometry data and figures.
 
 # Run program. 
-sne=( '20172782' )
+# The poster child:
+# sne=( '20172782' )
+
+# Fewer data points, overestimate flux in H band:
+# sne=( '20174118' )
+
+# OG list:
 # sne=( '20172117' '20172782' '20173305' '20174023' '20174118' '20174370' '20175077' '20177380' '20172328' '20173301' '20173373' '20174108' '20174213' '20174542' '20175568' '20202893' )
+
+# host_sn_sep > 1.7 (this is the host_sn_sep of 20172782)
+sne=( '20172782' '20001783' '20007992' '20012160' '20015318' '20022131' '20027046' '20029396' '20035246' '20037013' '20044575' '20045257' '20046134' '20046407' '20047507' '20049862' '20064501' '20066972' '20067672' '20067866' '20086185' )
+
+# How many templates am I using? 
+n_templates="1"
 
 for sn in "${sne[@]}"
 do
     echo "$sn"
+    # nsys profile --trace-fork-before-exec=true --trace=cuda,nvtx,cublas,cusparse,cudnn,cudla,opengl,openacc,openmp,osrt,mpi,nvvideo,vulkan python preprocess.py 20172782 --n-templates 1 --cpus-per-task 1 --verbose True --band R062
     # Step 1: Get all images the object is in.
-    # python -u get_object_instances.py "$sn" # We actually only want to do this step once per object.
-                                            # There is no reason to do it once per job array
-                                            # element (i.e., once per object per band).
+    # We actually only want to do this step once per object.
+    # There is no reason to do it once per job array
+    # element (i.e., once per object per band).
+    python -u get_object_instances.py "$sn" --n-templates "$n_templates" 
+
     # Step 2: Sky subtract, align images to be in DIA. 
     # WAIT FOR COMPLETION. 
     # Step 3: Get, align, save PSFs; cross-convolve. 
-    srun python -u preprocess.py "$sn" --n-templates 1 --verbose True --slurm_array
+    python -u preprocess.py "$sn" --verbose True \
+           --sci-list-path /pscratch/sd/l/laldorot/object_tables/"$sn"/"$sn"_instances_science.csv \
+           --template-list-path /pscratch/sd/l/laldorot/object_tables/"$sn"/"$sn"_instances_template_"$n_templates".csv \
+           --slurm_array
     # WAIT FOR COMPLETION.
+
     # Step 4: Differencing (GPU). 
-    srun python -u sfftdiff.py "$sn" --n-templates 1 --verbose True --slurm_array
+    python -u sfftdiff.py "$sn" --verbose True \
+           --sci-list-path /pscratch/sd/l/laldorot/object_tables/"$sn"/"$sn"_instances_science.csv \
+           --template-list-path /pscratch/sd/l/laldorot/object_tables/"$sn"/"$sn"_instances_template_"$n_templates".csv \
+           --slurm_array
     # WAIT FOR COMPLETION.
+
     # Step 5: Generate decorrelation kernel, apply to diff. image and science image, make stamps. 
-    srun python -u postprocess.py "$sn" --n-templates 1 --verbose True --slurm_array
+    python -u postprocess.py "$sn" --verbose True \
+           --sci-list-path /pscratch/sd/l/laldorot/object_tables/"$sn"/"$sn"_instances_science.csv \
+           --template-list-path /pscratch/sd/l/laldorot/object_tables/"$sn"/"$sn"_instances_template_"$n_templates".csv \
+           --slurm_array
     # WAIT FOR COMPLETION.
+
     # Step 6: Make LC and generate plots.
-    python -u mk_lc.py "$sn" --n-templates 1 --slurm_array
+    python -u mk_lc.py "$sn" --verbose True \
+    --sci-list-path /pscratch/sd/l/laldorot/object_tables/"$sn"/"$sn"_instances_science.csv \
+    --template-list-path /pscratch/sd/l/laldorot/object_tables/"$sn"/"$sn"_instances_template_"$n_templates".csv \
+    --slurm_array
 done
