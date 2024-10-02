@@ -1,0 +1,50 @@
+#!/bin/bash
+#SBATCH -N 1
+#SBATCH -n 32
+#SBATCH -G 1
+#SBATCH -t 01:00:00
+#SBATCH -d singleton
+#SBATCH -J nvtx
+#SBATCH -o ./%x.out
+#SBATCH -e ./%x.err 
+#SBATCH -A phy220048p
+#SBATCH -p RITA 
+
+########################################
+#####       Load environment       #####
+########################################
+
+# set up HPC environment
+module load anaconda3/2020.07
+
+# activate conda environment
+source /opt/packages/anaconda3/etc/profile.d/conda.sh
+conda deactivate
+condaDIR="/hildafs/projects/phy220048p/leihu/micromamba/envs/epy310"
+conda activate $condaDIR
+pythonPATH="$condaDIR/bin/python"
+# nsysPATH="/hildafs/projects/phy220048p/leihu/nsight-systems-2024.5.1/bin/nsys"
+ncuPATH="/hildafs/projects/phy220048p/leihu/NVIDIA-Nsight-Compute-2024.3/ncu"
+
+# add conda env./lib to LD_LIBRARY_PATH
+export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$condaDIR/lib"
+
+########################################
+#####         Script paths         #####
+########################################
+
+# /path/to/scripts
+scrHOME="/hildafs/projects/phy220048p/leihu/AstroWork/RomanSNPIT/SpaceSFFTPurePack-OPT"
+
+# define script paths
+scrPATH="$scrHOME/trigger.py"
+
+########################################
+#####         Run pipeline         #####
+########################################
+
+#ncu ncu --metrics gpu__time_duration.avg python ...
+# run scripts
+echo "---- start! ----"
+cd $scrHOME && $ncuPATH --metrics gpu__time_duration.avg $pythonPATH $scrPATH
+echo "---- finish! ----"
