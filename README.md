@@ -34,9 +34,13 @@ python mk_lc.py 20172782 --band R062 --inputdir /work/lna18/
 ```
 
 Example usage on the Roman Science Platform to set things up to subtract.
+Also consider 30029032
 ```
 oid=20000808
 band=H158
 python get_object_instances.py ${oid} 
-python preprocess.py ${oid} --band ${band}
+python preprocess.py ${oid} --band ${band} --n-templates 100
+python sfftdiff.py ${oid} --band ${band} --n-templates 100
+python postprocess.py ${oid} --band ${band} --n-templates 100
+python mk_lc.py ${oid} --band ${band} --n-templates 100
 ```
