@@ -115,7 +115,11 @@ gal:
 
 input:
     obseq_data:
+<<<<<<<< HEAD:SpaceSFFTPurePack-SNPIT/auxiliary/was.yaml
         file_name: /hildafs/projects/phy220048p/leihu/AstroWork/RomanSNPIT/diff-img/sfftTestPurePack/auxiliary/Roman_WAS_obseq_11_1_23.fits
+========
+        file_name: /hack_team_01/leiworkflow/diff-img/sfftTestPurePack/auxiliary/Roman_WAS_obseq_11_1_23.fits
+>>>>>>>> main:sfftTestPurePack/auxiliary/was.yaml
         visit: 80840
         SCA: '@image.SCA'
     roman_psf:
