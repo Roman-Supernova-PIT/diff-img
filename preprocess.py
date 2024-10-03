@@ -16,6 +16,9 @@ import matplotlib.pyplot as plt
 import time
 import json
 import numpy as np
+import cupy as cp
+
+from sfft.SpaceSFFTCupyFlow import SpaceSFFT_CupyFlow
 
 # Make numpy stop thread hogging.
 # I don't think I need this if I have it in the batch file, right?
@@ -93,148 +96,149 @@ def check_overlap(ra,dec,imgpath,data_ext=0,overlap_size=500,verbose=False,show_
             print(f'{imgpath} does not sufficiently overlap with the SN. ')
         return False
 
-def skysub(ra,dec,infodict,verbose=False):
-    """
-    Wrapper for phrosty.imagesubtraction.sky_subtract() that allows input of
-    a single dictionary for filter, pointing, and sca instead of individual
-    values for each argument. Use this to enable use of multiprocessing.Pool.map.
-    """
-    band, pointing, sca = infodict['filter'], infodict['pointing'], infodict['sca']
-    checkpath = _build_filepath(path=None,band=band,pointing=pointing,sca=sca,filetype='image',rootdir=sims_dir)
-    overlap = check_overlap(ra,dec,checkpath,verbose=verbose,data_ext=1)
+# def skysub(ra, dec, infodict, verbose=False):
+#     """
+#     Wrapper for phrosty.imagesubtraction.sky_subtract() that allows input of
+#     a single dictionary for filter, pointing, and sca instead of individual
+#     values for each argument. Use this to enable use of multiprocessing.Pool.map.
+#     """
+#     band, pointing, sca = infodict['filter'], infodict['pointing'], infodict['sca']
+#     checkpath = _build_filepath(path=None,band=band,pointing=pointing,sca=sca,filetype='image',rootdir=sims_dir)
+#     overlap = check_overlap(ra,dec,checkpath,verbose=verbose,data_ext=1)
 
-    if not overlap:
-        return None, None, None
-    else:
-        output_path, skylvl, skyrms, DETECT_MASK = sky_subtract(band=band, pointing=pointing, sca=sca, force=True)
-        return output_path, skyrms, DETECT_MASK
+#     if not overlap:
+#         return None, None, None
+#     else:
+#         output_path, skylvl, skyrms, DETECT_MASK = sky_subtract(band=band, pointing=pointing, sca=sca, force=True)
+#         return output_path, skyrms, DETECT_MASK
 
-def preprocess(ra,dec,band,pair_info,
-               skysub_dir=os.path.join(dia_out_dir,'skysub'),
-               verbose=False,logger=None):
-
-    ###########################################################################
-
-    # Get process name.
-    me = current_process()
-    match = re.search( '([0-9]+)', me.name)
-    if match is not None:
-        proc = match.group(1)
-    else:
-        proc = str(me.pid)
-
-    # Set logger.
-    logger = set_logger(proc,'preprocess')
-
-    ###########################################################################
-
-    t_info, sci_info = pair_info
-    sci_pointing, sci_sca = sci_info['pointing'], sci_info['sca']
-    t_pointing, t_sca = t_info['pointing'], t_info['sca']
-
-    orig_scipath = _build_filepath(path=None,band=band,pointing=sci_pointing,sca=sci_sca,filetype='image',rootdir=sims_dir)
-    orig_tpath = _build_filepath(path=None,band=band,pointing=t_pointing,sca=t_sca,filetype='image',rootdir=sims_dir)
-
-    science_overlap = check_overlap(ra,dec,orig_scipath,verbose=verbose,data_ext=1)
-    template_overlap = check_overlap(ra,dec,orig_tpath,verbose=verbose,data_ext=1)
-
-    if not template_overlap or not science_overlap:
-        if verbose:
-            logger.debug(f'{proc} Images {band} {sci_pointing} {sci_sca} and {band} {t_pointing} {t_sca} do not sufficiently overlap to do image subtraction.')
-
-        return None, None
-
-    else:
-        sci_skysub_path = os.path.join(skysub_dir,f'skysub_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}.fits')
-        t_skysub = os.path.join(skysub_dir,f'skysub_Roman_TDS_simple_model_{band}_{t_pointing}_{t_sca}.fits')
-
-        logger.debug(f'Path to sky-subtracted science image: \n {sci_skysub_path}')
-        logger.debug(f'Path to aligned, sky-subtracted template image: \n {t_align}')
-
-        logger.info( "*** Starting imalign" )
-        t_align_savename = f'skysub_Roman_TDS_simple_model_{band}_{t_pointing}_{t_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits'
-        with nvtx.annotate( "imalign", color="yellow" ):
-            t_align = imalign(template_path=sci_skysub_path,sci_path=t_skysub,savename=t_align_savename,force=True) # NOTE: This is correct, not flipped.
-
-        # TODO : think about config file location and configurability / parameters
-        logger.info( "*** Starting get_imsim_psf calls" )
-        with nvtx.annotate( "get_imsim_psf", color="red" ):
-            sci_psf_path = get_imsim_psf(ra, dec, band, sci_pointing, sci_sca,
-                                         config_yaml_file=os.path.join( os.getenv("SN_INFO_DIR"), "tds.yaml" ) )
-            if verbose:
-                logger.debug(f'Path to science PSF: \n {sci_psf_path}')
-
-            t_imsim_psf = get_imsim_psf(ra, dec, band, t_pointing, t_sca, logger=logger,
-                                        config_yaml_file=os.path.join( os.getenv("SN_INFO_DIR"), "tds.yaml" ) )
-
-        with nvtx.annotate( "rotate_psf", color="yellow" ):
-            rot_psf_name = f'rot_psf_{band}_{t_pointing}_{t_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits'
-            t_psf_path = rotate_psf(ra,dec,t_imsim_psf,sci_skysub_path,savename=rot_psf_name,force=True)
-            if verbose:
-                logger.debug(f'Path to template PSF: \n {t_psf_path}')
-
-
-        sci_conv_name = f'conv_sci_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}_-_{band}_{t_pointing}_{t_sca}.fits'
-        ref_conv_name = f'conv_ref_Roman_TDS_simple_model_{band}_{t_pointing}_{t_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits'
-        sci_conv, temp_conv = crossconvolve(sci_skysub_path,sci_psf_path,t_align,t_imsim_psf,sci_outname=sci_conv_name,ref_outname=ref_conv_name,force=True)
-        if verbose:
-            logger.debug(f'Path to cross-convolved science image: \n {sci_conv} \n Path to cross-convolved template image: \n {temp_conv}')
-
-        #cuda.close()
-            
-def run(oid, band, sci_list_path, template_list_path, cpus_per_task=1, verbose=False):
-# def run(oid, band, n_templates=1, cpus_per_task=1, verbose=False):
+def get_transient_info_and_images( oid, band, sci_list_path, template_list_path ):
+    ra, dec, start, end = get_transient_info(oid)
+    objinfo = { 'oid': oid,
+                'ra': ra,
+                'dec': dec,
+                'band': band,
+                'start': start,
+                'end': end }
     
-    ###################################################################
-    # Start tracemalloc.
-    tracemalloc.start()
-
-    ###################################################################
-
-    logger = set_logger( "preprocess_run", "pre_run" )
-    
-    if verbose:
-        start_time = time.time()
-
-    # logger.info( "***** Getting transient info" )
-    # ra,dec,start,end = get_transient_info(oid)
-    # logger.info( "***** Getting template_list" )
-    # template_list = get_templates(oid,band,infodir,n_templates,verbose=verbose)
-    # logger.info( "***** Getting science_list" )
-    # science_list = get_science(oid,band,infodir,verbose=verbose)
-
-    ra,dec,start,end = get_transient_info(oid)
-
     science_tab = Table.read(sci_list_path)
     science_tab = science_tab[science_tab['filter'] == band]
-    science_list = [dict(zip(science_tab.colnames,row)) for row in science_tab]
+    science_imgs = { ( row['filter'], row['pointing'], row['sca'] ):
+                     { 'filter': row['filter'],
+                       'pointing': row['pointing'],
+                       'sca': row['sca'],
+                       'path': _build_filepath( path=None, band=row['filter'], pointing=row['pointing'], sca=row['sca'],
+                                                filetype='image', rootdir=sims_dir ) }
+                     for row in science_tab }
+    science_imgs = [ k: v for k, v in science_imgs.items() if check_overlap( ra, dec, v['path'] ) ]
 
     template_tab = Table.read(template_list_path)
     template_tab = template_tab[template_tab['filter'] == band]
-    template_list = [dict(zip(template_tab.colnames,row)) for row in template_tab]
-    
-    pairs = list(itertools.product(template_list,science_list))
+    template_imgs = { ( row['filter'], row['pointing'], row['sca'] ):
+                      { 'filter': row['filter'],
+                        'pointing': row['pointing']
+                        'sca': row['sca'],
+                        'path': _build_filepath( path=None, band=row['filter'], pointing=row['pointing'], sca=row['sca'],
+                                                 filetype='image', rootdir=sims_dir ) }
+                      for row in template_tab }
+    template_imgs = [ k: v for k, v in template_imgs.items() if check_overlap( ra, dec, v['path'] ) ]
 
-    logger.info( "***** Doing skysub" )
-    with nvtx.annotate( "skysub", color="red" ):
-         # First, unzip and sky subtract the images in their own multiprocessing pool.
-        all_list = template_list + science_list
-        all_list = [dict(t) for t in {tuple(d.items()) for d in all_list}] # Remove duplicates 
-        for img in all_list:
-            skysub_img_path, skyrms, DETECT_MASK = skysub(ra,dec,img,verbose)
-            outvars = [skysub_img_path, skyrms, DETECT_MASK]
-            if all(v is None for v in [skysub_img_path, skyrms, DETECT_MASK]):
-                logger.info(f"There was not sufficient overlap with the SN for sky subtraction to be worth the time!")
-            else:
-                os.makedirs(os.path.join(dia_out_dir, 'skyrms'), exist_ok=True)
-                skysub_img_basename = os.path.basename(skysub_img_path)
-                skyrmspath = os.path.join(dia_out_dir, f'skyrms/{skysub_img_basename}.json')
-                # TODO : worry about using skyrms.mean(), think if we should use something else
-                json.dump( { 'skyrms': skyrms.mean() }, open( skyrmspath, "w" ) )
-                os.makedirs( os.path.join( dia_out_dir, 'detect_mask' ), exist_ok=True )
-                fname = os.path.join( dia_out_dir, f'detect_mask/{skysub_img_basename}.npy' )
-                logger.info( f"Writing detection mask to {fname}" )
-                np.save( fname, DETECT_MASK )
+    return objinfo, template_imgs, science_imgs
+
+def get_psfs( objinfo, template_imgs, science_imgs, cpus_per_task=1,
+              config_yaml_file=os.path.join( os.getenv("SN_INFO_DIR"), "tds.yaml" ) ):
+    ra = objinfo['ra']
+    dec = objinfo['dec']
+    band = objinfo['band']
+
+    all_imgs = { k: v for k, v in zip( list( template_imgs.keys() ) + list( science_imgs.keys() ),
+                                       list( template_imgs.values() ) + list( science_imgs.values() ) ) }
+
+    def run_get_imsim_psf( img ):
+        psf_path = get_imsim_psf( ra, dec, band, img['pointing'], img['sca'], config_yaml_file=config_yaml_file )
+        retrurn psf_path
+
+    def save_psf_path( imgkey, psf_path ):
+        all_imgs[imgkey]['psf_path'] = psf_path
+
+    if cpus_per_task > 1:
+        with Pool( cpus_per_task )_ as pool:
+            for imgkey, img in all_imgs.items():
+                pool.apply_async( run_get_imsim_psf, (img,), {},
+                                  lambda x: save_psf_path( imgkey, x ) )
+            pool.close()
+            pool.join()
+    else:
+        for imgkey, img in all_imgs.items():
+            save_psf_path( imgkey, run_get_imsim_psf( img )
+                
+
+def sky_sub_all_images( template_imgs, science_imgs, cpus_per_task=1 ):
+    all_imgs = { k: v for k, v in zip( list( template_imgs.keys() ) + list( science_imgs.keys() ),
+                                       list( template_imgs.values() ) + list( science_imgs.values() ) ) }
+
+    def run_sky_subtract( img ):
+        outpath, sky, skyrms, detect_mask = sky_subtract( path=img['path'], out_path=dia_out_dir )
+        return np.median(skyrms), detect_mask
+
+    def save_sky_subtract_result( imgkey, skyrms, detect_mask ):
+        all_imgs[imgkey]['skyrms'] = skyrms
+        all_imgs[imgkey]['detect_mask'] = detect_mask
+
+    if cpus_per_task > 1:
+        with Pool( cpus_per_task ) as pool:
+            for imgkey, img in all_imgs.items():
+                pool.apply_async( run_sky_subtract, (img,), {}
+                                  lambda x, y: save_sky_subtract( imgkey, x, y ) )
+            pool.close()
+            pool.join()
+    else:
+        for imgkey, img in all_imgs.items():
+            rval = run_sky_subtract( img )
+            save_sky_substrat( imgkey, rval[0], rval[1] )
+
+    template_imgs = { k: all_imgs[k] for k in template_imgs.keys() }
+    science_imgs = { k: all_imgs[k] for k in science_imgs.keys() }
+
+# def run(oid, band, sci_list_path, template_list_path, cpus_per_task=1, verbose=False):
+# # def run(oid, band, n_templates=1, cpus_per_task=1, verbose=False):
+    
+#     ###################################################################
+#     # Start tracemalloc.
+#     tracemalloc.start()
+
+#     ###################################################################
+
+#     logger = set_logger( "preprocess_run", "pre_run" )
+    
+#     if verbose:
+#         start_time = time.time()
+
+#     pairs = get_pairs( oid, sci_list_path, template_list_path )
+    
+#     logger.info( "***** Doing skysub" )
+
+#     with nvtx.annotate( "skysub", color="red" ):
+#          # First, unzip and sky subtract the images in their own multiprocessing pool.
+#         all_list = template_list + science_list
+#         all_list = [dict(t) for t in {tuple(d.items()) for d in all_list}] # Remove duplicates
+#         for img in all_list:
+#             skysub_img_path, skyrms, DETECT_MASK = skysub(ra, dec, img, verbose)
+#             img['skyrms'] = np.median( skyrms )
+#             img['detect_mask'] = DETECT_MASK
+#             outvars = [skysub_img_path, skyrms, DETECT_MASK]
+#             if all(v is None for v in [skysub_img_path, skyrms, DETECT_MASK]):
+#                 logger.info(f"There was not sufficient overlap with the SN for sky subtraction to be worth the time!")
+#             else:
+#                 os.makedirs(os.path.join(dia_out_dir, 'skyrms'), exist_ok=True)
+#                 skysub_img_basename = os.path.basename(skysub_img_path)
+#                 skyrmspath = os.path.join(dia_out_dir, f'skyrms/{skysub_img_basename}.json')
+#                 # TODO : worry about using skyrms.mean(), think if we should use something else
+#                 json.dump( { 'skyrms': skyrms.mean() }, open( skyrmspath, "w" ) )
+#                 os.makedirs( os.path.join( dia_out_dir, 'detect_mask' ), exist_ok=True )
+#                 fname = os.path.join( dia_out_dir, f'detect_mask/{skysub_img_basename}.npy' )
+#                 logger.info( f"Writing detection mask to {fname}" )
+#                 np.save( fname, DETECT_MASK )
              
 
 #        with Pool(cpus_per_task) as pool:
@@ -250,7 +254,7 @@ def run(oid, band, sci_list_path, template_list_path, cpus_per_task=1, verbose=F
 
     logger.info( "***** Calling preprocess" )
     for pair in pairs:
-        preprocess(ra,dec,band,pair,verbose=verbose)
+        preprocess(ra, dec, band, pair, verbose=verbose)
 #        with Manager() as mgr:
 #            mgr_pairs = mgr.list(pairs)
 #            with Pool(cpus_per_task) as pool_2:
@@ -273,6 +277,8 @@ def parse_slurm():
     """
     Turn a SLURM array ID into a band.
     """
+    raise RuntimeError( "THIS IS BROKEN" )
+
     sys.path.append(os.getcwd())
     taskID = int(os.environ["SLURM_ARRAY_TASK_ID"])
 
@@ -286,6 +292,8 @@ def parse_slurm():
     return band
 
 def parse_and_run():
+    raise RuntimeError( "THIS IS BROKEN" )
+
     parser = argparse.ArgumentParser(
         prog='preprocess',
         description='Sky-subtracts, aligns, and cross-convolves images and their PSFs.'

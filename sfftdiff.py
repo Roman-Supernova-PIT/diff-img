@@ -48,52 +48,117 @@ assert infodir is not None, 'You need to set DIA_INFO_DIR as an environment vari
 
 ###########################################################################
 
-def sfft(oid,band,
-         sci_pointing,sci_sca,
-         template_pointing,template_sca,
-         verbose=False,
-         backend='Cupy',
-         cudadevice='0',
-         nCPUthreads=1,
-         logger=None):
+def align_and_pre_convolve(ra, dec, band, pair_info,
+                           skysub_dir=os.path.join(dia_out_dir,'skysub'),
+                           verbose=False,logger=None):
 
-    ra, dec = get_transient_radec(oid)
+    ###########################################################################
 
-    # Path to convolved science image:
-    sci_conv = os.path.join(dia_out_dir,f'convolved/conv_sci_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
-
-    # Path to convolved template image:
-    template_conv = os.path.join(dia_out_dir,f'convolved/conv_ref_Roman_TDS_simple_model_{band}_{template_pointing}_{template_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits')
-
-    # Path to science PSF:
-    sci_psf_path = os.path.join(dia_out_dir,f'psf/psf_{ra}_{dec}_{band}_{sci_pointing}_{sci_sca}.fits')
-
-    # Path to template PSF:
-    template_psf_path = os.path.join(dia_out_dir,f'psf/rot_psf_{band}_{template_pointing}_{template_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits')
-
-    paths = [sci_conv,template_conv,sci_psf_path,template_psf_path]
-    pathexists = [os.path.exists(p) for p in paths]
-    if all(pathexists):
-
-        diff_savename = f'{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits' # 'diff_' gets prepended to the beginning of this
-        diff, soln = difference(sci_conv,template_conv,
-                                savename=diff_savename,
-                                backend=backend,cudadevice=cudadevice,
-                                nCPUthreads=1,force=True,logger=logger)
-        if verbose:
-            logger.debug(f'Path to differenced image: \n {diff}')
-
-        mempool = cp.get_default_memory_pool()
-        pinned_mempool = cp.get_default_pinned_memory_pool()
-
-        print(f'GPU MEMPRINT sfftdiff.sfft(): Memory pool used bytes = {mempool.used_bytes()}')
-        print('Now freeing blocks.')
-
-        mempool.free_all_blocks()
-        pinned_mempool.free_all_blocks()
-
+    # Get process name.
+    me = current_process()
+    match = re.search( '([0-9]+)', me.name)
+    if match is not None:
+        proc = match.group(1)
     else:
-        print(f'Preprocessed files for {band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca} do not exist. Skipping.')
+        proc = str(me.pid)
+
+    # Set logger.
+    logger = set_logger(proc,'preprocess')
+
+    ###########################################################################
+
+    t_info, sci_info = pair_info
+    sci_pointing, sci_sca = sci_info['pointing'], sci_info['sca']
+    t_pointing, t_sca = t_info['pointing'], t_info['sca']
+    sci_psf_path = sci_info['psf_path']
+    templ_psf_path = t_info['psf_path']
+    
+    orig_scipath = _build_filepath(path=None,band=band,pointing=sci_pointing,sca=sci_sca,filetype='image',rootdir=sims_dir)
+    orig_tpath = _build_filepath(path=None,band=band,pointing=t_pointing,sca=t_sca,filetype='image',rootdir=sims_dir)
+
+    sci_skysub_path = os.path.join(skysub_dir,f'skysub_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}.fits')
+    templ_skysub_path = os.path.join(skysub_dir,f'skysub_Roman_TDS_simple_model_{band}_{t_pointing}_{t_sca}.fits')
+
+    logger.debug(f'Path to sky-subtracted science image: \n {sci_skysub_path}')
+    logger.debug(f'Path to sky-subtracted template image: \n {templ_skysub_path}')
+
+    with fits.open( sci_skysub_path ) as hdul:
+        hdr_sci = hdul[0].header
+        data_sci = cp.array( np.ascontiguousarray(hdul[0].data.T), dtype=cp.float64 )
+    with fits.open( templ_skysub_path ) as hdul:
+        hdr_templ = hdul[0].header
+        data_templ = cp.array( np.ascontiguousarray(hdul[0].data.T), dtype=cp.float64 )
+
+    with fits.open( sci_psf_path ) as hdul:
+        sci_psf = cp.array( np.ascontiguousarray( hdul[0].data.T ), dtype=cp.float64 )
+
+    with fits.open( templ_psf_path ):
+        templ_psf = cp.array( np.ascontiguousarray( hdul[0].data.T ), dtype=cp.float64 )
+
+
+    sfftifier = SpaceSFFT_CupyFlow(
+        hdr_sci, hdr_templ,
+        data_sci, data_templ,
+        sci_info['det_mask'], t_info['det_mask'],
+        sci_psf, templ_psf
+    )
+    sfftifier.resampling_image_mask_psf()
+    sfftifier.cross_convolution()
+
+    return sffitifer
+
+
+# Replace this with a call to sfftifier.sfft_subtract()
+# def sfft(objinfo, sfftifier,
+#          band,
+#          sci_pointing, sci_sca,
+#          template_pointing, template_sca,
+#          verbose=False,
+#          backend='Cupy',
+#          cudadevice='0',
+#          nCPUthreads=1,
+#          logger=None):
+#     sfftifier.sfft_subtract()
+
+    
+    
+#     ra, dec = ( objinfo['ra'], objinfo['dec'] )
+
+#     # Path to convolved science image:
+#     sci_conv = os.path.join(dia_out_dir,f'convolved/conv_sci_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
+
+#     # Path to convolved template image:
+#     template_conv = os.path.join(dia_out_dir,f'convolved/conv_ref_Roman_TDS_simple_model_{band}_{template_pointing}_{template_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits')
+
+#     # Path to science PSF:
+#     sci_psf_path = os.path.join(dia_out_dir,f'psf/psf_{ra}_{dec}_{band}_{sci_pointing}_{sci_sca}.fits')
+
+#     # Path to template PSF:
+#     template_psf_path = os.path.join(dia_out_dir,f'psf/rot_psf_{band}_{template_pointing}_{template_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits')
+
+#     paths = [sci_conv,template_conv,sci_psf_path,template_psf_path]
+#     pathexists = [os.path.exists(p) for p in paths]
+#     if all(pathexists):
+
+#         diff_savename = f'{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits' # 'diff_' gets prepended to the beginning of this
+#         diff, soln = difference(sci_conv,template_conv,
+#                                 savename=diff_savename,
+#                                 backend=backend,cudadevice=cudadevice,
+#                                 nCPUthreads=1,force=True,logger=logger)
+#         if verbose:
+#             logger.debug(f'Path to differenced image: \n {diff}')
+
+#         mempool = cp.get_default_memory_pool()
+#         pinned_mempool = cp.get_default_pinned_memory_pool()
+
+#         print(f'GPU MEMPRINT sfftdiff.sfft(): Memory pool used bytes = {mempool.used_bytes()}')
+#         print('Now freeing blocks.')
+
+#         mempool.free_all_blocks()
+#         pinned_mempool.free_all_blocks()
+
+#     else:
+#         print(f'Preprocessed files for {band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca} do not exist. Skipping.')
 
 # def run(oid,band,n_templates=1,verbose=False):
 def run(oid,band,sci_list_path,template_list_path,verbose=False):
@@ -162,6 +227,8 @@ def parse_slurm():
     """
     Turn a SLURM array ID into a band. 
     """
+    raise RuntimeError( "OMG BROKEN" )
+    
     sys.path.append(os.getcwd())
     taskID = int(os.environ["SLURM_ARRAY_TASK_ID"])
 
@@ -175,7 +242,9 @@ def parse_slurm():
     return band
 
 def parse_and_run():
-    parser = argparse.ArgumentParser(
+    raise RuntimeError( "OMG BROKEN" )
+
+     parser = argparse.ArgumentParser(
         prog='sfft_and_animate', 
         description='Runs SFFT subtraction on images.'
     )
