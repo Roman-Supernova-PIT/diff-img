@@ -32,7 +32,10 @@ import astropy.units as u
 
 # IMPORTS Internal:
 from phrosty.imagesubtraction import difference
-from phrosty.utils import get_transient_radec, get_transient_info, transient_in_or_out, set_logger, get_templates, get_science
+from phrosty.utils import ( get_transient_radec, get_transient_info, transient_in_or_out,
+                            set_logger, get_templates, get_science, _build_filepath )
+
+from sfft.SpaceSFFTCupyFlow import SpaceSFFT_CupyFlow
 
 ###########################################################################
 # Get environment variables. 
@@ -52,26 +55,18 @@ def align_and_pre_convolve(ra, dec, band, pair_info,
                            skysub_dir=os.path.join(dia_out_dir,'skysub'),
                            verbose=False,logger=None):
 
-    ###########################################################################
-
-    # Get process name.
-    me = current_process()
-    match = re.search( '([0-9]+)', me.name)
-    if match is not None:
-        proc = match.group(1)
-    else:
-        proc = str(me.pid)
-
     # Set logger.
-    logger = set_logger(proc,'preprocess')
-
-    ###########################################################################
+    logger = set_logger("",'preprocess')
 
     t_info, sci_info = pair_info
     sci_pointing, sci_sca = sci_info['pointing'], sci_info['sca']
     t_pointing, t_sca = t_info['pointing'], t_info['sca']
     sci_psf_path = sci_info['psf_path']
     templ_psf_path = t_info['psf_path']
+    sci_detmask_path = sci_info['detect_mask']
+    templ_detmask_path = t_info['detect_mask']
+    sci_skyrms = sci_info['skyrms']
+    templ_skyrms = sci_info['skyrms']
     
     orig_scipath = _build_filepath(path=None,band=band,pointing=sci_pointing,sca=sci_sca,filetype='image',rootdir=sims_dir)
     orig_tpath = _build_filepath(path=None,band=band,pointing=t_pointing,sca=t_sca,filetype='image',rootdir=sims_dir)
@@ -92,20 +87,26 @@ def align_and_pre_convolve(ra, dec, band, pair_info,
     with fits.open( sci_psf_path ) as hdul:
         sci_psf = cp.array( np.ascontiguousarray( hdul[0].data.T ), dtype=cp.float64 )
 
-    with fits.open( templ_psf_path ):
+    with fits.open( templ_psf_path ) as hdul:
         templ_psf = cp.array( np.ascontiguousarray( hdul[0].data.T ), dtype=cp.float64 )
 
+    with fits.open( sci_detmask_path ) as hdul:
+        sci_detmask = cp.array( np.ascontiguousarray( hdul[0].data.T ) )
+        
+    with fits.open( templ_detmask_path ) as hdul:
+        templ_detmask = cp.array( np.ascontiguousarray( hdul[0].data.T ) )
 
     sfftifier = SpaceSFFT_CupyFlow(
         hdr_sci, hdr_templ,
+        sci_skyrms, templ_skyrms,
         data_sci, data_templ,
-        sci_info['det_mask'], t_info['det_mask'],
+        sci_detmask, templ_detmask,
         sci_psf, templ_psf
     )
     sfftifier.resampling_image_mask_psf()
     sfftifier.cross_convolution()
 
-    return sffitifer
+    return sfftifier
 
 
 # Replace this with a call to sfftifier.sfft_subtract()
@@ -244,7 +245,7 @@ def parse_slurm():
 def parse_and_run():
     raise RuntimeError( "OMG BROKEN" )
 
-     parser = argparse.ArgumentParser(
+    parser = argparse.ArgumentParser(
         prog='sfft_and_animate', 
         description='Runs SFFT subtraction on images.'
     )

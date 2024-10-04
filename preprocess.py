@@ -130,23 +130,35 @@ def get_transient_info_and_images( oid, band, sci_list_path, template_list_path 
                        'path': _build_filepath( path=None, band=row['filter'], pointing=row['pointing'], sca=row['sca'],
                                                 filetype='image', rootdir=sims_dir ) }
                      for row in science_tab }
-    science_imgs = [ k: v for k, v in science_imgs.items() if check_overlap( ra, dec, v['path'] ) ]
+    # TODO : think about data_ext and what images are what and so forth
+    science_imgs = { k: v for k, v in science_imgs.items() if check_overlap( ra, dec, v['path'], data_ext=1 ) }
 
     template_tab = Table.read(template_list_path)
     template_tab = template_tab[template_tab['filter'] == band]
     template_imgs = { ( row['filter'], row['pointing'], row['sca'] ):
                       { 'filter': row['filter'],
-                        'pointing': row['pointing']
+                        'pointing': row['pointing'],
                         'sca': row['sca'],
                         'path': _build_filepath( path=None, band=row['filter'], pointing=row['pointing'], sca=row['sca'],
                                                  filetype='image', rootdir=sims_dir ) }
                       for row in template_tab }
-    template_imgs = [ k: v for k, v in template_imgs.items() if check_overlap( ra, dec, v['path'] ) ]
+    template_imgs = { k: v for k, v in template_imgs.items() if check_overlap( ra, dec, v['path'], data_ext=1 ) }
 
     return objinfo, template_imgs, science_imgs
 
+def run_get_imsim_psf( img, objinfo, config_yaml_file ):
+    psf_path = get_imsim_psf( objinfo['ra'], objinfo['dec'], objinfo['band'],
+                              img['pointing'], img['sca'], config_yaml_file=config_yaml_file )
+    return psf_path
+
+def save_psf_path( all_imgs, imgkey, psf_path ):
+    print( f"Addfing psf_path to imgkey {imgkey}\n" )
+    all_imgs[imgkey]['psf_path'] = psf_path
+
 def get_psfs( objinfo, template_imgs, science_imgs, cpus_per_task=1,
               config_yaml_file=os.path.join( os.getenv("SN_INFO_DIR"), "tds.yaml" ) ):
+    logger = set_logger( "preprocess_get_psfs", "pre_get_psfs" )
+
     ra = objinfo['ra']
     dec = objinfo['dec']
     band = objinfo['band']
@@ -154,55 +166,61 @@ def get_psfs( objinfo, template_imgs, science_imgs, cpus_per_task=1,
     all_imgs = { k: v for k, v in zip( list( template_imgs.keys() ) + list( science_imgs.keys() ),
                                        list( template_imgs.values() ) + list( science_imgs.values() ) ) }
 
-    def run_get_imsim_psf( img ):
-        psf_path = get_imsim_psf( ra, dec, band, img['pointing'], img['sca'], config_yaml_file=config_yaml_file )
-        retrurn psf_path
-
-    def save_psf_path( imgkey, psf_path ):
-        all_imgs[imgkey]['psf_path'] = psf_path
-
     if cpus_per_task > 1:
-        with Pool( cpus_per_task )_ as pool:
+        with Pool( cpus_per_task ) as pool:
             for imgkey, img in all_imgs.items():
-                pool.apply_async( run_get_imsim_psf, (img,), {},
-                                  lambda x: save_psf_path( imgkey, x ) )
+                callback_partial = partial( save_psf_path, all_imgs, imgkey )
+                pool.apply_async( run_get_imsim_psf, (img, objinfo, config_yaml_file), {},
+                                  callback_partial,
+                                  lambda x: logger.error( f"get_imsim_psf subprocess failure: {x}" ) )
             pool.close()
             pool.join()
     else:
         for imgkey, img in all_imgs.items():
-            save_psf_path( imgkey, run_get_imsim_psf( img )
+            save_psf_path( imgkey, run_get_imsim_psf( img ) )
+
+    template_imgs = { k: all_imgs[k] for k in template_imgs.keys() }
+    science_imgs = { k: all_imgs[k] for k in science_imgs.keys() }
+    return template_imgs, science_imgs
                 
+
+def run_sky_subtract( img ):
+    outpath, sky, skyrms, detect_mask = sky_subtract( path=img['path'], out_path=dia_out_dir, force=True )
+    skyrms = np.median(skyrms)
+    return ( skyrms, detect_mask )
+
+def save_sky_subtract_result( all_imgs, imgkey, skyrms_and_detect_mask ):
+    skyrms, detect_mask = skyrms_and_detect_mask
+    all_imgs[imgkey]['skyrms'] = skyrms
+    all_imgs[imgkey]['detect_mask'] = detect_mask
 
 def sky_sub_all_images( template_imgs, science_imgs, cpus_per_task=1 ):
     all_imgs = { k: v for k, v in zip( list( template_imgs.keys() ) + list( science_imgs.keys() ),
                                        list( template_imgs.values() ) + list( science_imgs.values() ) ) }
 
-    def run_sky_subtract( img ):
-        outpath, sky, skyrms, detect_mask = sky_subtract( path=img['path'], out_path=dia_out_dir )
-        return np.median(skyrms), detect_mask
-
-    def save_sky_subtract_result( imgkey, skyrms, detect_mask ):
-        all_imgs[imgkey]['skyrms'] = skyrms
-        all_imgs[imgkey]['detect_mask'] = detect_mask
+    logger = set_logger( "preprocess_sky_sub", "pre_sky_sub" )
 
     if cpus_per_task > 1:
         with Pool( cpus_per_task ) as pool:
             for imgkey, img in all_imgs.items():
-                pool.apply_async( run_sky_subtract, (img,), {}
-                                  lambda x, y: save_sky_subtract( imgkey, x, y ) )
+                callback_partial = partial( save_sky_subtract_result, all_imgs, imgkey )
+                pool.apply_async( run_sky_subtract, (img,), {},
+                                  callback=callback_partial,
+                                  error_callback=lambda x: logger.error( f"Sky subtraction subprocess failure: {x}" ) )
             pool.close()
             pool.join()
     else:
         for imgkey, img in all_imgs.items():
-            rval = run_sky_subtract( img )
-            save_sky_substrat( imgkey, rval[0], rval[1] )
+            save_sky_subtract_result( imgkey, run_sky_subtract( img ) )
 
     template_imgs = { k: all_imgs[k] for k in template_imgs.keys() }
     science_imgs = { k: all_imgs[k] for k in science_imgs.keys() }
+    return template_imgs, science_imgs
 
 # def run(oid, band, sci_list_path, template_list_path, cpus_per_task=1, verbose=False):
 # # def run(oid, band, n_templates=1, cpus_per_task=1, verbose=False):
     
+
 #     ###################################################################
 #     # Start tracemalloc.
 #     tracemalloc.start()
@@ -247,31 +265,31 @@ def sky_sub_all_images( template_imgs, science_imgs, cpus_per_task=1 ):
 #            pool.join()
 
 
-    if verbose:
-        print('\n ******************************************************** \n Images have been sky-subtracted. \n  ******************************************************** \n')
+#     if verbose:
+#         print('\n ******************************************************** \n Images have been sky-subtracted. \n  ******************************************************** \n')
 
 #    partial_preprocess = partial(preprocess,ra,dec,band,verbose=verbose)
 
-    logger.info( "***** Calling preprocess" )
-    for pair in pairs:
-        preprocess(ra, dec, band, pair, verbose=verbose)
+#     logger.info( "***** Calling preprocess" )
+#     for pair in pairs:
+#         preprocess(ra, dec, band, pair, verbose=verbose)
 #        with Manager() as mgr:
 #            mgr_pairs = mgr.list(pairs)
 #            with Pool(cpus_per_task) as pool_2:
 #                process_2 = pool_2.map(partial_preprocess,mgr_pairs)
 #                pool_2.close()
 #                pool_2.join()
-
-    if verbose:
-        print('\n ******************************************************** \n Templates aligned, PSFs retrieved and aligned, images cross-convolved. \n  ******************************************************** \n')
-        print(f'RUNTIMEPRINT preprocess.py: {time.time()-start_time}')
-
-    ###################################################################
-    # Print tracemalloc.
-    current, peak = tracemalloc.get_traced_memory()
-    print(f'MEMPRINT preprocess.py: Current memory = {current}, peak memory = {peak}')
-
-    ###################################################################
+# 
+#     if verbose:
+#         print('\n ******************************************************** \n Templates aligned, PSFs retrieved and aligned, images cross-convolved. \n  ******************************************************** \n')
+#         print(f'RUNTIMEPRINT preprocess.py: {time.time()-start_time}')
+# 
+#     ###################################################################
+#     # Print tracemalloc.
+#     current, peak = tracemalloc.get_traced_memory()
+#     print(f'MEMPRINT preprocess.py: Current memory = {current}, peak memory = {peak}')
+# 
+#     ###################################################################
 
 def parse_slurm():
     """
