@@ -96,22 +96,6 @@ def check_overlap(ra,dec,imgpath,data_ext=0,overlap_size=500,verbose=False,show_
             print(f'{imgpath} does not sufficiently overlap with the SN. ')
         return False
 
-# def skysub(ra, dec, infodict, verbose=False):
-#     """
-#     Wrapper for phrosty.imagesubtraction.sky_subtract() that allows input of
-#     a single dictionary for filter, pointing, and sca instead of individual
-#     values for each argument. Use this to enable use of multiprocessing.Pool.map.
-#     """
-#     band, pointing, sca = infodict['filter'], infodict['pointing'], infodict['sca']
-#     checkpath = _build_filepath(path=None,band=band,pointing=pointing,sca=sca,filetype='image',rootdir=sims_dir)
-#     overlap = check_overlap(ra,dec,checkpath,verbose=verbose,data_ext=1)
-
-#     if not overlap:
-#         return None, None, None
-#     else:
-#         output_path, skylvl, skyrms, DETECT_MASK = sky_subtract(band=band, pointing=pointing, sca=sca, force=True)
-#         return output_path, skyrms, DETECT_MASK
-
 def get_transient_info_and_images( oid, band, sci_list_path, template_list_path ):
     ra, dec, start, end = get_transient_info(oid)
     objinfo = { 'oid': oid,
@@ -217,80 +201,6 @@ def sky_sub_all_images( template_imgs, science_imgs, cpus_per_task=1 ):
     science_imgs = { k: all_imgs[k] for k in science_imgs.keys() }
     return template_imgs, science_imgs
 
-# def run(oid, band, sci_list_path, template_list_path, cpus_per_task=1, verbose=False):
-# # def run(oid, band, n_templates=1, cpus_per_task=1, verbose=False):
-    
-
-#     ###################################################################
-#     # Start tracemalloc.
-#     tracemalloc.start()
-
-#     ###################################################################
-
-#     logger = set_logger( "preprocess_run", "pre_run" )
-    
-#     if verbose:
-#         start_time = time.time()
-
-#     pairs = get_pairs( oid, sci_list_path, template_list_path )
-    
-#     logger.info( "***** Doing skysub" )
-
-#     with nvtx.annotate( "skysub", color="red" ):
-#          # First, unzip and sky subtract the images in their own multiprocessing pool.
-#         all_list = template_list + science_list
-#         all_list = [dict(t) for t in {tuple(d.items()) for d in all_list}] # Remove duplicates
-#         for img in all_list:
-#             skysub_img_path, skyrms, DETECT_MASK = skysub(ra, dec, img, verbose)
-#             img['skyrms'] = np.median( skyrms )
-#             img['detect_mask'] = DETECT_MASK
-#             outvars = [skysub_img_path, skyrms, DETECT_MASK]
-#             if all(v is None for v in [skysub_img_path, skyrms, DETECT_MASK]):
-#                 logger.info(f"There was not sufficient overlap with the SN for sky subtraction to be worth the time!")
-#             else:
-#                 os.makedirs(os.path.join(dia_out_dir, 'skyrms'), exist_ok=True)
-#                 skysub_img_basename = os.path.basename(skysub_img_path)
-#                 skyrmspath = os.path.join(dia_out_dir, f'skyrms/{skysub_img_basename}.json')
-#                 # TODO : worry about using skyrms.mean(), think if we should use something else
-#                 json.dump( { 'skyrms': skyrms.mean() }, open( skyrmspath, "w" ) )
-#                 os.makedirs( os.path.join( dia_out_dir, 'detect_mask' ), exist_ok=True )
-#                 fname = os.path.join( dia_out_dir, f'detect_mask/{skysub_img_basename}.npy' )
-#                 logger.info( f"Writing detection mask to {fname}" )
-#                 np.save( fname, DETECT_MASK )
-             
-
-#        with Pool(cpus_per_task) as pool:
-#            process = pool.map(skysub, all_list)
-#            pool.close()
-#            pool.join()
-
-
-#     if verbose:
-#         print('\n ******************************************************** \n Images have been sky-subtracted. \n  ******************************************************** \n')
-
-#    partial_preprocess = partial(preprocess,ra,dec,band,verbose=verbose)
-
-#     logger.info( "***** Calling preprocess" )
-#     for pair in pairs:
-#         preprocess(ra, dec, band, pair, verbose=verbose)
-#        with Manager() as mgr:
-#            mgr_pairs = mgr.list(pairs)
-#            with Pool(cpus_per_task) as pool_2:
-#                process_2 = pool_2.map(partial_preprocess,mgr_pairs)
-#                pool_2.close()
-#                pool_2.join()
-# 
-#     if verbose:
-#         print('\n ******************************************************** \n Templates aligned, PSFs retrieved and aligned, images cross-convolved. \n  ******************************************************** \n')
-#         print(f'RUNTIMEPRINT preprocess.py: {time.time()-start_time}')
-# 
-#     ###################################################################
-#     # Print tracemalloc.
-#     current, peak = tracemalloc.get_traced_memory()
-#     print(f'MEMPRINT preprocess.py: Current memory = {current}, peak memory = {peak}')
-# 
-#     ###################################################################
-
 def parse_slurm():
     """
     Turn a SLURM array ID into a band.
@@ -343,12 +253,6 @@ def parse_and_run():
         help='Path to list of template images.'
     )
 
-    # parser.add_argument(
-    #     "--n-templates",
-    #     type=int,
-    #     help='Number of template images to use.'
-    # )
-
     parser.add_argument(
         '--cpus-per-task',
         type=int,
@@ -384,7 +288,6 @@ def parse_and_run():
         # TODO : default when no slurm
         cpus_per_task = int(os.environ['SLURM_CPUS_PER_TASK'])
 
-    # run(args.oid, args.band, args.n_templates, cpus_per_task=cpus_per_task, verbose=args.verbose)
     run(args.oid, args.band, args.sci_list_path, args.template_list_path, cpus_per_task=cpus_per_task, verbose=args.verbose)
     print("Finished with preprocess.py!")
 
