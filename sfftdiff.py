@@ -108,60 +108,6 @@ def align_and_pre_convolve(ra, dec, band, pair_info,
 
     return sfftifier
 
-
-# Replace this with a call to sfftifier.sfft_subtract()
-# def sfft(objinfo, sfftifier,
-#          band,
-#          sci_pointing, sci_sca,
-#          template_pointing, template_sca,
-#          verbose=False,
-#          backend='Cupy',
-#          cudadevice='0',
-#          nCPUthreads=1,
-#          logger=None):
-#     sfftifier.sfft_subtract()
-
-    
-    
-#     ra, dec = ( objinfo['ra'], objinfo['dec'] )
-
-#     # Path to convolved science image:
-#     sci_conv = os.path.join(dia_out_dir,f'convolved/conv_sci_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
-
-#     # Path to convolved template image:
-#     template_conv = os.path.join(dia_out_dir,f'convolved/conv_ref_Roman_TDS_simple_model_{band}_{template_pointing}_{template_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits')
-
-#     # Path to science PSF:
-#     sci_psf_path = os.path.join(dia_out_dir,f'psf/psf_{ra}_{dec}_{band}_{sci_pointing}_{sci_sca}.fits')
-
-#     # Path to template PSF:
-#     template_psf_path = os.path.join(dia_out_dir,f'psf/rot_psf_{band}_{template_pointing}_{template_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits')
-
-#     paths = [sci_conv,template_conv,sci_psf_path,template_psf_path]
-#     pathexists = [os.path.exists(p) for p in paths]
-#     if all(pathexists):
-
-#         diff_savename = f'{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits' # 'diff_' gets prepended to the beginning of this
-#         diff, soln = difference(sci_conv,template_conv,
-#                                 savename=diff_savename,
-#                                 backend=backend,cudadevice=cudadevice,
-#                                 nCPUthreads=1,force=True,logger=logger)
-#         if verbose:
-#             logger.debug(f'Path to differenced image: \n {diff}')
-
-#         mempool = cp.get_default_memory_pool()
-#         pinned_mempool = cp.get_default_pinned_memory_pool()
-
-#         print(f'GPU MEMPRINT sfftdiff.sfft(): Memory pool used bytes = {mempool.used_bytes()}')
-#         print('Now freeing blocks.')
-
-#         mempool.free_all_blocks()
-#         pinned_mempool.free_all_blocks()
-
-#     else:
-#         print(f'Preprocessed files for {band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca} do not exist. Skipping.')
-
-# def run(oid,band,n_templates=1,verbose=False):
 def run(oid,band,sci_list_path,template_list_path,verbose=False):
 
     ###########################################################################
@@ -180,10 +126,6 @@ def run(oid,band,sci_list_path,template_list_path,verbose=False):
 
     if verbose:
         start_time = time.time()
-
-    # ra,dec,start,end = get_transient_info(oid)
-    # template_list = get_templates(oid,band,infodir,n_templates,verbose=verbose)
-    # science_list = get_science(oid,band,infodir,verbose=verbose)
 
     science_tab = Table.read(sci_list_path)
     science_tab = science_tab[science_tab['filter'] == band]
@@ -276,12 +218,6 @@ def parse_and_run():
         help='Path to list of template images.'
     )
 
-    # parser.add_argument(
-    #     "--n-templates",
-    #     type=int,
-    #     help='Number of template images to use.'
-    # )
-
     parser.add_argument(
         '--verbose',
         type=bool,
@@ -305,7 +241,6 @@ def parse_and_run():
         print("Must specify either '--band' xor ('--slurm_array' and have SLURM_ARRAY_TASK_ID defined).")
         sys.exit()
 
-    # run(args.oid, args.band, args.n_templates, args.verbose)
     run(args.oid, args.band, args.sci_list_path, args.template_list_path, args.verbose)
     print("Finished with sfftdiff.py!")
 
