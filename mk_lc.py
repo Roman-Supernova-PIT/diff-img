@@ -191,7 +191,9 @@ def make_phot_info_dict(oid, band, pair_info, ap_r=4):
     mjd = get_mjd(sci_pointing)
 
     # Make sure there's a difference image stamp to do photometry on.
-    diff_img_stamp_path = os.path.join(dia_out_dir, f'stamps/stamp_{ra}_{dec}_decorr_diff_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
+    # TODO: Bring stamp making back, and change this path back to actually run on a stamp (less memory)
+    # diff_img_stamp_path = os.path.join(dia_out_dir, f'stamps/stamp_{ra}_{dec}_decorr_diff_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
+    diff_img_stamp_path = os.path.join(dia_out_dir,f'decorr/decorr_diff_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
     if os.path.exists(diff_img_stamp_path):
         # Load in the difference image stamp.
         with fits.open(diff_img_stamp_path) as diff_hdu:

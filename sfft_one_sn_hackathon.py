@@ -62,9 +62,9 @@ for templ_info in template_imgs.values():
             decorr_psf_path = os.path.join( decorr_dir,
                                             f'psf_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits' )
             decorr_zptimg_path = os.path.join( decorr_dir,
-                                               f'stamp_{ra}_{dec}_decorr_zptimg_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}.fits' )
+                                               f'zptimg_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}.fits' )
             decorr_diff_path = os.path.join( decorr_dir,
-                                             f'decor_diff_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
+                                             f'decorr_diff_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
 
             for img, savepath, hdr in zip( [ sfftifier.PixA_DIFF_GPU, sfftifier.PixA_Ctarget_GPU, sfftifier.PSF_target_GPU ],
                                            [ decorr_diff_path,        decorr_zptimg_path,         decorr_psf_path ],
