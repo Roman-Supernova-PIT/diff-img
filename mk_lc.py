@@ -339,11 +339,7 @@ def split_table(oid, band, tab, template_info):
 
     return savepath
 
-# def run(oid, band, n_templates=1, cpus_per_task=1, verbose=False):
 def run(oid, band, sci_list_path, template_list_path, cpus_per_task=1, verbose=False):
-    # template_list = get_templates(oid,band,infodir,n_templates,verbose=verbose)
-    # science_list = get_science(oid,band,infodir,verbose=verbose)
-
     science_tab = Table.read(sci_list_path)
     science_tab = science_tab[science_tab['filter'] == band]
     science_list = [dict(zip(science_tab.colnames,row)) for row in science_tab]
@@ -379,7 +375,7 @@ def run(oid, band, sci_list_path, template_list_path, cpus_per_task=1, verbose=F
     partial_split_table = partial(split_table,oid,band,results_tab)
 
     pointings = unique(results_tab['template_pointing','template_sca'], keys='template_pointing').as_array()
-    with Pool(n_templates) as pool_2:
+    with Pool(cpus_per_task) as pool_2:
         res_2 = pool_2.map(partial_split_table,pointings)
         pool_2.close()
         pool_2.join()
@@ -548,13 +544,6 @@ def parse_and_run():
         choices=[None, "F184", "H158", "J129", "K213", "R062", "Y106", "Z087"],
         help="Filter to use.  None to use all available.  Overridden by --slurm_array.",
     )
-
-    # parser.add_argument(
-    #     '--n-templates',
-    #     type=int,
-    #     default=1,
-    #     help='Number of template images to use.'
-    # )
 
     parser.add_argument(
         "--sci-list-path",

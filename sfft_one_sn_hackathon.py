@@ -14,8 +14,12 @@ import mk_lc
 
 sn = '20172782'
 band = 'R062'
-sci_list_path = "/phrosty_etal/20172782_instances_two_science.csv"
-templ_list_path = "/phrosty_etal/20172782_one_templates.csv"
+# sci_list_path = "/phrosty_etal/20172782_instances_two_science.csv"
+# templ_list_path = "/phrosty_etal/20172782_one_templates.csv"
+
+# Lauren's paths:
+sci_list_path = "/pscratch/sd/l/laldorot/object_tables/20172782/20172782_instances_science.csv"
+templ_list_path = "/pscratch/sd/l/laldorot/object_tables/20172782/20172782_instances_template_1.csv"
 
 ncpus = 3
 
@@ -75,7 +79,7 @@ for templ_info in template_imgs.values():
 # TODO : make lightcurve
 
 # logger.info( f"*** Running mk_lc for {sn} {band}" )
-# with nvtx.annotate( "mk_lc", color="violet" ):
-#     mk_lc.run( sn, band, n_templates=1, verbose=True, cpus_per_task=ncpus )
+with nvtx.annotate( "mk_lc", color="violet" ):
+    mk_lc.run( sn, band, sci_list_path, templ_list_path, cpus_per_task=ncpus, verbose=True )
 
 logger.info( f"*** Done with {sn} {band}" )
