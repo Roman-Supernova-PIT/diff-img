@@ -2,10 +2,12 @@ import nvtx
 
 import os
 import cupy
+import numpy as np
 
 from astropy.io import fits
 
 from phrosty.utils import set_logger
+from phrosty.imagesubtraction import stampmaker
 
 import preprocess
 import sfftdiff
@@ -18,7 +20,7 @@ band = 'R062'
 # templ_list_path = "/phrosty_etal/20172782_one_templates.csv"
 
 # Lauren's paths:
-sci_list_path = "/pscratch/sd/l/laldorot/object_tables/20172782/20172782_instances_science.csv"
+sci_list_path = "/pscratch/sd/l/laldorot/object_tables/20172782/20172782_instances_science_1.csv"
 templ_list_path = "/pscratch/sd/l/laldorot/object_tables/20172782/20172782_instances_template_1.csv"
 
 ncpus = 3
@@ -75,10 +77,14 @@ for templ_info in template_imgs.values():
                     fits.writeto( savepath, cupy.asnumpy( decorimg ).T, header=hdr, overwrite=True )
         
 # TODO -- stamp making (postprocess)
+# TODO -- add the un-differenced stamp 
+# TODO -- discuss if postprocess.py is now totally unnecessary or not. 
+decorr_diff_stamp_savename = f'stamp_{ra}_{dec}_decorr_diff_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits'
+decorr_diff_stamp_path = stampmaker(ra,dec,decorr_diff_stamp_savename,shape=np.array([100,100]))
 
-# TODO : make lightcurve
-
-# logger.info( f"*** Running mk_lc for {sn} {band}" )
+# TODO: Make sure all the paths in mk_lc are correct with all the above
+# changes that we made. E.g. I know I took using the stamp for photometry out. 
+logger.info( f"*** Running mk_lc for {sn} {band}" )
 with nvtx.annotate( "mk_lc", color="violet" ):
     mk_lc.run( sn, band, sci_list_path, templ_list_path, cpus_per_task=ncpus, verbose=True )
 

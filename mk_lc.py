@@ -176,10 +176,6 @@ def phot_at_coords(img, psf, pxcoords=(50, 50), ap_r=4):
                     'mag_fit_err': mag_err
                     }
 
-    print('RESULTS_DICT flux_fit')
-    print('flux_fit')
-    print(flux)
-
     return results_dict
 
 def make_phot_info_dict(oid, band, pair_info, ap_r=4):
@@ -326,6 +322,7 @@ def make_lc_plot(oid, band, start, end, phot_path=None):
     os.makedirs(savedir, exist_ok=True)
     savename = f'{oid}_{band}_{template_pointing}_{template_sca}.png'
     savepath = os.path.join(savedir,savename)
+    print(savepath)
     plt.savefig(savepath, dpi=300, bbox_inches="tight")
     plt.close()
 
