@@ -215,15 +215,21 @@ def run(oid,band,n_templates=1,verbose=False):
     if verbose:
         print('\n ******************************************************** \n Images have been sky-subtracted. \n  ******************************************************** \n')
 
-    partial_preprocess = partial(preprocess,ra,dec,band,verbose=verbose)
+    RUN_PSF_IN_SERIAL = True
+    if RUN_PSF_IN_SERIAL:
+        for pair_info in pairs:
+            preprocess(ra, dec, band, pair_info=pair_info, verbose=verbose)
 
-    with Manager() as mgr:
-        mgr_pairs = mgr.list(pairs)
-        with Pool(cpus_per_task) as pool_2:
-            print(f"Pool: {pairs}")
-            process_2 = pool_2.map(partial_preprocess,mgr_pairs)
-            pool_2.close()
-            pool_2.join()
+    else:
+        partial_preprocess = partial(preprocess, ra, dec, band, verbose=verbose)
+
+        with Manager() as mgr:
+            mgr_pairs = mgr.list(pairs)
+            with Pool(cpus_per_task) as pool_2:
+                print(f"Pool: {pairs}")
+                process_2 = pool_2.map(partial_preprocess,mgr_pairs)
+                pool_2.close()
+                pool_2.join()
 
     if verbose:
         print('\n ******************************************************** \n Templates aligned, PSFs retrieved and aligned, images cross-convolved. \n  ******************************************************** \n')
