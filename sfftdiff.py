@@ -1,3 +1,5 @@
+import nvtx
+
 # IMPORTS Standard:
 import logging
 import tracemalloc
@@ -125,16 +127,17 @@ def run(oid,band,n_templates=1,verbose=False):
     pairs = list(itertools.product(template_list,science_list))
 
     for pair in pairs:
-        template_info = pair[0]
-        sci_info = pair[1]
+        with nvtx.annotate( "sfft_diff_one_pair", color=0x88ff88 ):
+            template_info = pair[0]
+            sci_info = pair[1]
 
-        template_pointing, template_sca = template_info['pointing'], template_info['sca']
-        sci_pointing, sci_sca = sci_info['pointing'], sci_info['sca']
+            template_pointing, template_sca = template_info['pointing'], template_info['sca']
+            sci_pointing, sci_sca = sci_info['pointing'], sci_info['sca']
 
-        sfft(oid,band,
-             sci_pointing,sci_sca,
-             template_pointing,template_sca,
-             verbose=verbose,logger=logger)
+            sfft(oid,band,
+                 sci_pointing,sci_sca,
+                 template_pointing,template_sca,
+                 verbose=verbose,logger=logger)
 
     if verbose:
         print(f'Difference imaging complete. \n RUNTIMEPRINT sfftdiff.py: {time.time()-start_time} \n GPU MEMPRINT sfftdiff.py {mempool_all.used_bytes()}')

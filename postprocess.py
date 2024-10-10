@@ -1,3 +1,5 @@
+import nvtx
+
 # IMPORTS Standard:
 import logging
 import tracemalloc
@@ -61,9 +63,10 @@ def postprocess(ra,dec,band,pair_info,
 
     ###########################################################################
 
-    template_info, sci_info = pair_info
-    sci_pointing, sci_sca = sci_info['pointing'], sci_info['sca']
-    template_pointing, template_sca = template_info['pointing'], template_info['sca']
+    with nvtx.annotate("template_info", color=0x8800ff):
+        template_info, sci_info = pair_info
+        sci_pointing, sci_sca = sci_info['pointing'], sci_info['sca']
+        template_pointing, template_sca = template_info['pointing'], template_info['sca']
 
     # First, check that the difference image exists in the first place. 
     subtract_dir = os.path.join(dia_out_dir,'subtract')
@@ -87,48 +90,54 @@ def postprocess(ra,dec,band,pair_info,
         dcker_savename = f'dcker_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits'
 
         # Generate decorrelation kernel.
-        dcker_path = decorr_kernel(sci_skysub_path,template_skysub_path,
-                                   sci_psf_path,template_psf_path,
-                                   diffpath,solnpath,
-                                   savename=dcker_savename)
+        with nvtx.annotate( "decorr_kernel", color="green" ):
+            dcker_path = decorr_kernel(sci_skysub_path,template_skysub_path,
+                                       sci_psf_path,template_psf_path,
+                                       diffpath,solnpath,
+                                       savename=dcker_savename)
         if verbose:
             logger.debug(f'Path to decorrelation kernel: \n {dcker_path}')
 
         # Apply decorrelation kernel to images    
-        decorr_imgpath = decorr_img(diffpath,dcker_path)
+        with nvtx.annotate("decorr_img diff", color="green"):
+            decorr_imgpath = decorr_img(diffpath,dcker_path)
         if verbose:
             logger.debug(f'Path to final decorrelated differenced image: \n {decorr_imgpath}')
 
         sci_conv = os.path.join(dia_out_dir,f'convolved/conv_sci_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits')
         zpt_savename = f'zptimg_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits'
-        zpt_imgpath = decorr_img(sci_conv,dcker_path,savename=zpt_savename)
+        with nvtx.annotate( "decorr_img zpt", color="green" ):
+            zpt_imgpath = decorr_img(sci_conv,dcker_path,savename=zpt_savename)
         if verbose:
             logger.debug(f'Path to zeropoint image: \n {zpt_imgpath}')
 
         # Apply decorrelation kernel to PSF
         decorr_psf_savename = f'psf_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits'
-        decorr_psfpath = decorr_img(sci_psf_path,dcker_path,savename=decorr_psf_savename)
+        with nvtx.annotate( "decorr_img psf", color=0xaa44ff ):
+            decorr_psfpath = decorr_img(sci_psf_path,dcker_path,savename=decorr_psf_savename)
         if verbose:
             logger.debug(f'Path to decorrelated PSF (use for photometry): \n {decorr_psfpath}')
 
-        # Make stamps
-        skysub_stamp_savename = f'stamp_{ra}_{dec}_skysub_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}.fits'
-        skysub_stamp_path = stampmaker(ra,dec,sci_skysub_path,savename=skysub_stamp_savename,shape=np.array([100,100]))
-        if verbose:
-            logger.debug(f'Path to sky-subtracted-only SN stamp: \n {skysub_stamp_path}')
+        with nvtx.annotate( "stamp making", color="red" ):
+            # Make stamps
+            skysub_stamp_savename = f'stamp_{ra}_{dec}_skysub_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}.fits'
+            skysub_stamp_path = stampmaker(ra,dec,sci_skysub_path,savename=skysub_stamp_savename,shape=np.array([100,100]))
+            if verbose:
+                logger.debug(f'Path to sky-subtracted-only SN stamp: \n {skysub_stamp_path}')
 
-        decorr_zptimg_savename = f'stamp_{ra}_{dec}_decorr_zptimg_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}.fits'
-        decorr_zptimg_stamp = stampmaker(ra,dec,zpt_imgpath,savename=decorr_zptimg_savename,shape=np.array([100,100]))
-        if verbose:
-            logger.debug(f'Path to sky-subtracted-only SN stamp: \n {skysub_stamp_path}')
+            decorr_zptimg_savename = f'stamp_{ra}_{dec}_decorr_zptimg_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}.fits'
+            decorr_zptimg_stamp = stampmaker(ra,dec,zpt_imgpath,savename=decorr_zptimg_savename,shape=np.array([100,100]))
+            if verbose:
+                logger.debug(f'Path to sky-subtracted-only SN stamp: \n {skysub_stamp_path}')
 
-        d_stamp_savename = f'stamp_{ra}_{dec}_decorr_diff_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits'
-        d_stamp_path = stampmaker(ra,dec,diffpath,savename=d_stamp_savename,shape=np.array([100,100]))
-        if verbose:
-            logger.debug(f'Path to differenced SN stamp: \n {d_stamp_path}')
+            d_stamp_savename = f'stamp_{ra}_{dec}_decorr_diff_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits'
+            d_stamp_path = stampmaker(ra,dec,diffpath,savename=d_stamp_savename,shape=np.array([100,100]))
+            if verbose:
+                logger.debug(f'Path to differenced SN stamp: \n {d_stamp_path}')
 
-        dd_stamp_savename = f'stamp_{ra}_{dec}_decorr_diff_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits'
-        dd_stamp_path = stampmaker(ra,dec,decorr_imgpath,savename=dd_stamp_savename,shape=np.array([100,100]))
+            dd_stamp_savename = f'stamp_{ra}_{dec}_decorr_diff_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca}.fits'
+            dd_stamp_path = stampmaker(ra,dec,decorr_imgpath,savename=dd_stamp_savename,shape=np.array([100,100]))
+
         if verbose:
             logger.debug(f'Path to final decorrelated differenced SN stamp: \n {dd_stamp_path}')
     else:

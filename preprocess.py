@@ -1,3 +1,5 @@
+import nvtx
+
 # IMPORTS Standard:
 import logging
 import tracemalloc
@@ -122,7 +124,8 @@ def preprocess(ra,dec,band,pair_info,
     t_skysub = os.path.join(skysub_dir,f'skysub_Roman_TDS_simple_model_{band}_{t_pointing}_{t_sca}.fits')
 
     t_align_savename = f'skysub_Roman_TDS_simple_model_{band}_{t_pointing}_{t_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits'
-    t_align = imalign(template_path=sci_skysub_path,sci_path=t_skysub,savename=t_align_savename,force=True) # NOTE: This is correct, not flipped.
+    with nvtx.annotate("imalign", color="yellow"):
+        t_align = imalign(template_path=sci_skysub_path,sci_path=t_skysub,savename=t_align_savename,force=True) # NOTE: This is correct, not flipped.
 
     logger.debug(f'Path to sky-subtracted science image: \n {sci_skysub_path}')
     logger.debug(f'Path to aligned, sky-subtracted template image: \n {t_align}')
@@ -145,17 +148,19 @@ def preprocess(ra,dec,band,pair_info,
     else:
         logger.debug("Trying to get PSF")
         logger.debug(f"{ra}, {dec}, {band}, {sci_pointing}, {sci_sca}")
-        sci_psf_path = get_imsim_psf(ra,dec,band,sci_pointing,sci_sca)
-        logger.debug("Got PSF")
-        if verbose:
-            logger.debug(f'Path to science PSF: \n {sci_psf_path}')
+        with nvtx.annotate("get_imsim_psf", color="red"):
+            sci_psf_path = get_imsim_psf(ra,dec,band,sci_pointing,sci_sca)
+            logger.debug("Got PSF")
+            if verbose:
+                logger.debug(f'Path to science PSF: \n {sci_psf_path}')
 
-        t_imsim_psf = get_imsim_psf(ra,dec,band,t_pointing,t_sca,logger=logger)
+            t_imsim_psf = get_imsim_psf(ra,dec,band,t_pointing,t_sca,logger=logger)
 
-        rot_psf_name = f'rot_psf_{band}_{t_pointing}_{t_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits'
-        t_psf_path = rotate_psf(ra,dec,t_imsim_psf,sci_skysub_path,savename=rot_psf_name,force=True)
-        if verbose:
-            logger.debug(f'Path to template PSF: \n {t_psf_path}')
+        with nvtx.annotate("rotate_psf", color="yellow"):
+            rot_psf_name = f'rot_psf_{band}_{t_pointing}_{t_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits'
+            t_psf_path = rotate_psf(ra,dec,t_imsim_psf,sci_skysub_path,savename=rot_psf_name,force=True)
+            if verbose:
+                logger.debug(f'Path to template PSF: \n {t_psf_path}')
 
         sci_conv_name = f'conv_sci_Roman_TDS_simple_model_{band}_{sci_pointing}_{sci_sca}_-_{band}_{t_pointing}_{t_sca}.fits'
         ref_conv_name = f'conv_ref_Roman_TDS_simple_model_{band}_{t_pointing}_{t_sca}_-_{band}_{sci_pointing}_{sci_sca}.fits'
@@ -203,14 +208,15 @@ def run(oid,band,n_templates=1,verbose=False):
     pairs = list(itertools.product(template_list, science_list))
     print(pairs)
 
-    # First, unzip and sky subtract the images in their own multiprocessing pool.
-    all_list = template_list + science_list
-    cpus_per_task = int(os.getenv('SLURM_CPUS_PER_TASK', 1))
+    with nvtx.annotate( "skysub", color="red" ):
+        # First, unzip and sky subtract the images in their own multiprocessing pool.
+        all_list = template_list + science_list
+        cpus_per_task = int(os.getenv('SLURM_CPUS_PER_TASK', 1))
 
-    with Pool(cpus_per_task) as pool:
-        process = pool.map(skysub, all_list)
-        pool.close()
-        pool.join()
+        with Pool(cpus_per_task) as pool:
+            process = pool.map(skysub, all_list)
+            pool.close()
+            pool.join()
 
     if verbose:
         print('\n ******************************************************** \n Images have been sky-subtracted. \n  ******************************************************** \n')
