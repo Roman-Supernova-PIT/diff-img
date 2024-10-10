@@ -127,11 +127,14 @@ def preprocess(ra,dec,band,pair_info,
     logger.debug(f'Path to sky-subtracted science image: \n {sci_skysub_path}')
     logger.debug(f'Path to aligned, sky-subtracted template image: \n {t_align}')
 
-    logger.debug(f"Path {t_skysub} not found")
-    logger.debug(f"Path {sci_skysub_path} not found")
+    # 2024-10-01 MWV:
+    # I don't know what these lines were for
+    #    logger.debug(f"Path {t_skysub} not found")
+    #    logger.debug(f"Path {sci_skysub_path} not found")
 
     template_overlap = check_overlap(ra,dec,t_align,verbose=verbose)
     science_overlap = check_overlap(ra,dec,sci_skysub_path,verbose=verbose)
+    logger.debug(f"Overlap: {template_overlap}, {science_overlap}")
 
     if not template_overlap or not science_overlap:
         if verbose:
@@ -140,7 +143,10 @@ def preprocess(ra,dec,band,pair_info,
         return None, None
 
     else:
+        logger.debug("Trying to get PSF")
+        logger.debug(f"{ra}, {dec}, {band}, {sci_pointing}, {sci_sca}")
         sci_psf_path = get_imsim_psf(ra,dec,band,sci_pointing,sci_sca)
+        logger.debug("Got PSF")
         if verbose:
             logger.debug(f'Path to science PSF: \n {sci_psf_path}')
 
@@ -182,6 +188,21 @@ def run(oid,band,n_templates=1,verbose=False):
 
     pairs = list(itertools.product(template_list, science_list))
 
+
+    # Check and remove entries for files that don't exist
+    # This is intended to be useful when working with a reduced dataset
+    # that may not contain all of the images for a particular supernova
+    # Either a local laptop, or e.g. the RomanDESCSims Preview dataset.
+    template_list = files_that_exist(template_list)
+    science_list = files_that_exist(science_list)
+
+    # Horrific hack.  Please remove
+    science_list = template_list[1:]
+    template_list = template_list[:1]
+
+    pairs = list(itertools.product(template_list, science_list))
+    print(pairs)
+
     # First, unzip and sky subtract the images in their own multiprocessing pool.
     all_list = template_list + science_list
     cpus_per_task = int(os.getenv('SLURM_CPUS_PER_TASK', 1))
@@ -199,6 +220,7 @@ def run(oid,band,n_templates=1,verbose=False):
     with Manager() as mgr:
         mgr_pairs = mgr.list(pairs)
         with Pool(cpus_per_task) as pool_2:
+            print(f"Pool: {pairs}")
             process_2 = pool_2.map(partial_preprocess,mgr_pairs)
             pool_2.close()
             pool_2.join()
@@ -258,8 +280,8 @@ def parse_and_run():
 
     parser.add_argument(
         '--verbose',
-        type=bool,
         default=False,
+        action="store_true",
         help='Talkativeness of code.'
     )
 
