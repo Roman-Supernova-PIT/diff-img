@@ -1,7 +1,7 @@
 import os
 
 sne = [20001783, 20007992, 20012160, 20015318, 20022131, 20027046, 20029396, 20035246, 20037013, 20044575, 20045257, 20046134, 20046407, 20047507, 20049862, 20064501, 20066972, 20067672, 20067866, 20086185]
-n_templates = 1
+n_templates = 10
 
 def mk_bash(sn,n_templates,jobname='sfft'):
     bash_head = '#!/bin/bash \n' + \
@@ -53,35 +53,35 @@ def mk_bash(sn,n_templates,jobname='sfft'):
                 '# There is no reason to do it once per job array \n' + \
                 '# element (i.e., once per object per band). \n' + \
                 f'python -u get_object_instances.py \"$sn\" --n-templates \"$n_templates\" \n' + \
-                '\n' + \
-                '# Step 2: Sky subtract, align images to be in DIA. \n' + \
-                '# WAIT FOR COMPLETION. \n' + \
-                '# Step 3: Get, align, save PSFs; cross-convolve. \n' + \
-                'python -u preprocess.py \"$sn\" --verbose True \\ \n' + \
-                '       --sci-list-path "$SN_INFO_DIR"/\"$sn\"/\"$sn\"_instances_science.csv \\ \n' + \
-                '       --template-list-path "$SN_INFO_DIR"/\"$sn\"/\"$sn\"_instances_template_\"$n_templates\".csv \\ \n' + \
-                '       --slurm_array \n' + \
-                '# WAIT FOR COMPLETION. \n' + \
-                '\n' + \
-                '# Step 4: Differencing (GPU). \n' + \
-                'python -u sfftdiff.py \"$sn\" --verbose True \\ \n' + \
-                '       --sci-list-path "$SN_INFO_DIR"/\"$sn"/\"$sn"_instances_science.csv \\ \n' + \
-                '       --template-list-path "$SN_INFO_DIR"/\"$sn\"/\"$sn\"_instances_template_\"$n_templates\".csv \\ \n' + \
-                '       --slurm_array \n' + \
-                '# WAIT FOR COMPLETION. \n' + \
-                '\n' + \
-                '# Step 5: Generate decorrelation kernel, apply to diff. image and science image, make stamps. \n' + \
-                'python -u postprocess.py \"$sn\" --verbose True \\ \n' + \
-                '       --sci-list-path "$SN_INFO_DIR"/\"$sn\"/\"$sn\"_instances_science.csv \\ \n' + \
-                '       --template-list-path "$SN_INFO_DIR"/\"$sn\"/\"$sn\"_instances_template_\"$n_templates\".csv \\ \n' + \
-                '       --slurm_array \n' + \
-                '# WAIT FOR COMPLETION. \n' + \
-                '\n' + \
-                '# Step 6: Make LC and generate plots. \n' + \
-                'python -u mk_lc.py \"$sn\" --verbose True \\ \n' + \
-                '       --sci-list-path "$SN_INFO_DIR"/\"$sn"/\"$sn\"_instances_science.csv \\ \n' + \
-                '       --template-list-path "$SN_INFO_DIR"/\"$sn\"/\"$sn\"_instances_template_\"$n_templates\".csv \\ \n' + \
-                '       --slurm_array'
+                '\n'
+                # '# Step 2: Sky subtract, align images to be in DIA. \n' + \
+                # '# WAIT FOR COMPLETION. \n' + \
+                # '# Step 3: Get, align, save PSFs; cross-convolve. \n' + \
+                # 'python -u preprocess.py \"$sn\" --verbose True \\ \n' + \
+                # '       --sci-list-path "$SN_INFO_DIR"/\"$sn\"/\"$sn\"_instances_science.csv \\ \n' + \
+                # '       --template-list-path "$SN_INFO_DIR"/\"$sn\"/\"$sn\"_instances_template_\"$n_templates\".csv \\ \n' + \
+                # '       --slurm_array \n' + \
+                # '# WAIT FOR COMPLETION. \n' + \
+                # '\n' + \
+                # '# Step 4: Differencing (GPU). \n' + \
+                # 'python -u sfftdiff.py \"$sn\" --verbose True \\ \n' + \
+                # '       --sci-list-path "$SN_INFO_DIR"/\"$sn"/\"$sn"_instances_science.csv \\ \n' + \
+                # '       --template-list-path "$SN_INFO_DIR"/\"$sn\"/\"$sn\"_instances_template_\"$n_templates\".csv \\ \n' + \
+                # '       --slurm_array \n' + \
+                # '# WAIT FOR COMPLETION. \n' + \
+                # '\n' + \
+                # '# Step 5: Generate decorrelation kernel, apply to diff. image and science image, make stamps. \n' + \
+                # 'python -u postprocess.py \"$sn\" --verbose True \\ \n' + \
+                # '       --sci-list-path "$SN_INFO_DIR"/\"$sn\"/\"$sn\"_instances_science.csv \\ \n' + \
+                # '       --template-list-path "$SN_INFO_DIR"/\"$sn\"/\"$sn\"_instances_template_\"$n_templates\".csv \\ \n' + \
+                # '       --slurm_array \n' + \
+                # '# WAIT FOR COMPLETION. \n' + \
+                # '\n' + \
+                # '# Step 6: Make LC and generate plots. \n' + \
+                # 'python -u mk_lc.py \"$sn\" --verbose True \\ \n' + \
+                # '       --sci-list-path "$SN_INFO_DIR"/\"$sn"/\"$sn\"_instances_science.csv \\ \n' + \
+                # '       --template-list-path "$SN_INFO_DIR"/\"$sn\"/\"$sn\"_instances_template_\"$n_templates\".csv \\ \n' + \
+                # '       --slurm_array'
 
     bash_string = bash_head + bash_main
     return bash_string
