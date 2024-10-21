@@ -1,3 +1,5 @@
+import nvtx
+
 # IMPORTS Standard:
 import logging
 import tracemalloc
@@ -93,7 +95,8 @@ def sfft(oid,band,
     else:
         print(f'Preprocessed files for {band}_{sci_pointing}_{sci_sca}_-_{band}_{template_pointing}_{template_sca} do not exist. Skipping.')
 
-def run(oid,band,n_templates=1,verbose=False):
+# def run(oid,band,n_templates=1,verbose=False):
+def run(oid,band,sci_list_path,template_list_path,verbose=False):
 
     ###########################################################################
 
@@ -112,22 +115,37 @@ def run(oid,band,n_templates=1,verbose=False):
     if verbose:
         start_time = time.time()
 
-    ra,dec,start,end = get_transient_info(oid)
-    template_list = get_templates(oid,band,infodir,n_templates,verbose=verbose)
-    science_list = get_science(oid,band,infodir,verbose=verbose)
+    # ra,dec,start,end = get_transient_info(oid)
+    # template_list = get_templates(oid,band,infodir,n_templates,verbose=verbose)
+    # science_list = get_science(oid,band,infodir,verbose=verbose)
+
+    science_tab = Table.read(sci_list_path)
+    science_tab = science_tab[science_tab['filter'] == band]
+    science_list = [dict(zip(science_tab.colnames,row)) for row in science_tab]
+
+    template_tab = Table.read(template_list_path)
+    template_tab = template_tab[template_tab['filter'] == band]
+    template_list = [dict(zip(template_tab.colnames,row)) for row in template_tab]
+
     pairs = list(itertools.product(template_list,science_list))
 
     for pair in pairs:
-        template_info = pair[0]
-        sci_info = pair[1]
+        with nvtx.annotate( "sfft_diff_one_pair", color=0x88ff88 ):
+            template_info = pair[0]
+            sci_info = pair[1]
 
-        template_pointing, template_sca = template_info['pointing'], template_info['sca']
-        sci_pointing, sci_sca = sci_info['pointing'], sci_info['sca']
+            template_pointing, template_sca = template_info['pointing'], template_info['sca']
+            sci_pointing, sci_sca = sci_info['pointing'], sci_info['sca']
 
-        sfft(oid,band,
-             sci_pointing,sci_sca,
-             template_pointing,template_sca,
-             verbose=verbose,logger=logger)
+            try:
+                sfft(oid,band,
+                    sci_pointing,sci_sca,
+                    template_pointing,template_sca,
+                    verbose=verbose,logger=logger)
+            except Exception as exe:
+                print(f'WARNING! EXCEPTION OCCURRED ON {pair}!')
+                print(exe)
+                print(' ******************************************************** \n')
 
     if verbose:
         print(f'Difference imaging complete. \n RUNTIMEPRINT sfftdiff.py: {time.time()-start_time} \n GPU MEMPRINT sfftdiff.py {mempool_all.used_bytes()}')
@@ -177,10 +195,22 @@ def parse_and_run():
     )
 
     parser.add_argument(
-        "--n-templates",
-        type=int,
-        help='Number of template images to use.'
+        "--sci-list-path",
+        type=str,
+        help='Path to list of science images.'
     )
+
+    parser.add_argument(
+        "--template-list-path",
+        type=str,
+        help='Path to list of template images.'
+    )
+
+    # parser.add_argument(
+    #     "--n-templates",
+    #     type=int,
+    #     help='Number of template images to use.'
+    # )
 
     parser.add_argument(
         '--verbose',
@@ -205,7 +235,8 @@ def parse_and_run():
         print("Must specify either '--band' xor ('--slurm_array' and have SLURM_ARRAY_TASK_ID defined).")
         sys.exit()
 
-    run(args.oid, args.band, args.n_templates, args.verbose)
+    # run(args.oid, args.band, args.n_templates, args.verbose)
+    run(args.oid, args.band, args.sci_list_path, args.template_list_path, args.verbose)
     print("Finished with sfftdiff.py!")
 
 if __name__ == '__main__':
