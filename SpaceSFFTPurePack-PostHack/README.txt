@@ -1,5 +1,5 @@
 # download input data
-basn [YOUR_DIR]/SpaceSFFTPurePack-PostHack/input/download_input_files.sh
+bash [YOUR_DIR]/SpaceSFFTPurePack-PostHack/input/download_input_files.sh
 
 # edit configuration file was.yaml
 [1] open [YOUR_DIR]/SpaceSFFTPurePack-PostHack/auxiliary/was.yaml
