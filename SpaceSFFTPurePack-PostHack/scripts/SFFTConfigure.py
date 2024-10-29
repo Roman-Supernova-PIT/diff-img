@@ -1,5 +1,5 @@
 import numpy as np
-# version: Feb 5, 2023
+# version: Oct 28, 2024
 
 __author__ = "Lei Hu <leihu@andrew.cmu.edu>"
 __version__ = "v1.4"
@@ -83,7 +83,7 @@ class SingleSFFTConfigure_Cupy:
         # ** produce spatial coordinate X/Y/oX/oY-map
         _refdict = {'N0': N0, 'N1': N1}
         _funcstr = r"""
-        extern "C" __global__ void kmain(int PixA_X_GPU[%(N0)s][%(N1)s], int PixA_Y_GPU[%(N0)s][%(N1)s], 
+        extern "C" __global__ void kmain_SpatialCoor(int PixA_X_GPU[%(N0)s][%(N1)s], int PixA_Y_GPU[%(N0)s][%(N1)s], 
             double PixA_CX_GPU[%(N0)s][%(N1)s], double PixA_CY_GPU[%(N0)s][%(N1)s])
         {
             int ROW = blockIdx.x*blockDim.x+threadIdx.x;
@@ -103,15 +103,15 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
-        _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=False)
+        _module = cp.RawModule(code=_code, backend=u'nvcc', options=('--generate-line-info',), translate_cucomplex=False)
         SFFTModule_dict['SpatialCoor'] = _module
 
         # ************************************ SpatialPoly.cu ************************************ #
-
+        # column order...
         # ** produce Iij, Tpq
         _refdict = {'N0': N0, 'N1': N1, 'Fij': Fij, 'Fpq': Fpq}
         _funcstr = r"""
-        extern "C" __global__ void kmain(int REF_ij_GPU[%(Fij)s][2], int REF_pq_GPU[%(Fpq)s][2],
+        extern "C" __global__ void kmain_SpatialPoly(int REF_ij_GPU[%(Fij)s][2], int REF_pq_GPU[%(Fpq)s][2],
             double PixA_CX_GPU[%(N0)s][%(N1)s], double PixA_CY_GPU[%(N0)s][%(N1)s], double PixA_I_GPU[%(N0)s][%(N1)s], 
             double SPixA_Iij_GPU[%(Fij)s][%(N0)s][%(N1)s], double SPixA_Tpq_GPU[%(Fpq)s][%(N0)s][%(N1)s]) 
         {
@@ -141,7 +141,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
-        _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=False)
+        _module = cp.RawModule(code=_code, backend=u'nvcc', options=('--generate-line-info',), translate_cucomplex=False)
         SFFTModule_dict['SpatialPoly'] = _module
 
         # ************************************ HadProd_OMG.cu & FillLS_OMG.cu ************************************ #
@@ -150,7 +150,7 @@ class SingleSFFTConfigure_Cupy:
         _refdict = {'N0': N0, 'N1': N1, 'Fij': Fij, 'FOMG': FOMG, 'ThreadPerB': MaxThreadPerB}
         _funcstr = r"""
         #include "cuComplex.h"
-        extern "C" __global__ void kmain(int SREF_iji0j0_GPU[%(FOMG)s][2],
+        extern "C" __global__ void kmain_HadProd_OMG(int SREF_iji0j0_GPU[%(FOMG)s][2],
             cuDoubleComplex SPixA_FIij_GPU[%(Fij)s][%(N0)s][%(N1)s],
             cuDoubleComplex SPixA_CFIij_GPU[%(Fij)s][%(N0)s][%(N1)s], 
             cuDoubleComplex HpOMG_GPU[%(FOMG)s][%(N0)s][%(N1)s]) 
@@ -191,13 +191,13 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
-        _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=True)
+        _module = cp.RawModule(code=_code, backend=u'nvcc', options=('--generate-line-info',), translate_cucomplex=True)
         SFFTModule_dict['HadProd_OMG'] = _module
 
         # ** Fill Linear-System [𝛀]
         _refdict = {'N0': N0, 'N1': N1, 'Fijab': Fijab, 'Fab': Fab, 'Fij': Fij, 'NEQ': NEQ, 'FOMG': FOMG}
         _funcstr = r"""
-        extern "C" __global__ void kmain(int SREF_ijab_GPU[%(Fijab)s][2], int REF_ab_GPU[%(Fab)s][2], 
+        extern "C" __global__ void kmain_FillLS_OMG(int SREF_ijab_GPU[%(Fijab)s][2], int REF_ab_GPU[%(Fab)s][2], 
             double PreOMG_GPU[%(FOMG)s][%(N0)s][%(N1)s], double LHMAT_GPU[%(NEQ)s][%(NEQ)s]) 
         {
             int ROW = blockIdx.x*blockDim.x+threadIdx.x;
@@ -271,7 +271,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
-        _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=False)
+        _module = cp.RawModule(code=_code, backend=u'nvcc', options=('--generate-line-info',), translate_cucomplex=False)
         SFFTModule_dict['FillLS_OMG'] = _module
 
         # ************************************ HadProd_GAM.cu & FillLS_GAM.cu ************************************ #
@@ -280,7 +280,7 @@ class SingleSFFTConfigure_Cupy:
         _refdict = {'N0': N0, 'N1': N1, 'Fij': Fij, 'Fpq': Fpq, 'FGAM': FGAM, 'ThreadPerB': MaxThreadPerB}
         _funcstr = r"""
         #include "cuComplex.h"
-        extern "C" __global__ void kmain(int SREF_ijpq_GPU[%(FGAM)s][2], 
+        extern "C" __global__ void kmain_HadProd_GAM(int SREF_ijpq_GPU[%(FGAM)s][2], 
             cuDoubleComplex SPixA_FIij_GPU[%(Fij)s][%(N0)s][%(N1)s],
             cuDoubleComplex SPixA_CFTpq_GPU[%(Fpq)s][%(N0)s][%(N1)s], 
             cuDoubleComplex HpGAM_GPU[%(FGAM)s][%(N0)s][%(N1)s])
@@ -322,13 +322,13 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
-        _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=True)
+        _module = cp.RawModule(code=_code, backend=u'nvcc', options=('--generate-line-info',), translate_cucomplex=True)
         SFFTModule_dict['HadProd_GAM'] = _module
 
         # ** Fill Linear-System [𝜦]
         _refdict = {'N0': N0, 'N1': N1, 'NEQ': NEQ, 'Fab': Fab, 'Fpq': Fpq, 'Fijab': Fijab, 'FGAM': FGAM}
         _funcstr = r"""
-        extern "C" __global__ void kmain(int SREF_ijab_GPU[%(Fijab)s][2], int REF_ab_GPU[%(Fab)s][2], 
+        extern "C" __global__ void kmain_FillLS_GAM(int SREF_ijab_GPU[%(Fijab)s][2], int REF_ab_GPU[%(Fab)s][2], 
             double PreGAM_GPU[%(FGAM)s][%(N0)s][%(N1)s], double LHMAT_GPU[%(NEQ)s][%(NEQ)s]) 
         {
             int ROW = blockIdx.x*blockDim.x+threadIdx.x;
@@ -373,7 +373,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
-        _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=False)
+        _module = cp.RawModule(code=_code, backend=u'nvcc', options=('--generate-line-info',), translate_cucomplex=False)
         SFFTModule_dict['FillLS_GAM'] = _module
 
         # ************************************ HadProd_PSI.cu & FillLS_PSI.cu ************************************ #
@@ -382,7 +382,7 @@ class SingleSFFTConfigure_Cupy:
         _refdict = {'N0': N0, 'N1': N1, 'Fij': Fij, 'Fpq': Fpq, 'FPSI': FPSI, 'ThreadPerB': MaxThreadPerB}
         _funcstr = r"""
         #include "cuComplex.h"
-        extern "C" __global__ void kmain(int SREF_pqij_GPU[%(FPSI)s][2],
+        extern "C" __global__ void kmain_HadProd_PSI(int SREF_pqij_GPU[%(FPSI)s][2],
             cuDoubleComplex SPixA_CFIij_GPU[%(Fij)s][%(N0)s][%(N1)s], 
             cuDoubleComplex SPixA_FTpq_GPU[%(Fpq)s][%(N0)s][%(N1)s], 
             cuDoubleComplex HpPSI_GPU[%(FPSI)s][%(N0)s][%(N1)s]) 
@@ -424,13 +424,13 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
-        _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=True)
+        _module = cp.RawModule(code=_code, backend=u'nvcc', options=('--generate-line-info',), translate_cucomplex=True)
         SFFTModule_dict['HadProd_PSI'] = _module
 
         # ** Fill Linear-System [𝜳]
         _refdict = {'N0': N0, 'N1': N1, 'NEQ': NEQ, 'Fab': Fab, 'Fij': Fij, 'Fpq': Fpq, 'Fijab': Fijab, 'FPSI': FPSI}
         _funcstr = r"""
-        extern "C" __global__ void kmain(int SREF_ijab_GPU[%(Fijab)s][2], int REF_ab_GPU[%(Fab)s][2], 
+        extern "C" __global__ void kmain_FillLS_PSI(int SREF_ijab_GPU[%(Fijab)s][2], int REF_ab_GPU[%(Fab)s][2], 
             double PrePSI_GPU[%(FPSI)s][%(N0)s][%(N1)s], double LHMAT_GPU[%(NEQ)s][%(NEQ)s]) 
         {
             int ROW = blockIdx.x*blockDim.x+threadIdx.x;
@@ -475,7 +475,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
-        _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=False)
+        _module = cp.RawModule(code=_code, backend=u'nvcc', options=('--generate-line-info',), translate_cucomplex=False)
         SFFTModule_dict['FillLS_PSI'] = _module
 
         # ************************************ HadProd_PHI.cu & FillLS_PHI.cu ************************************ #
@@ -484,7 +484,7 @@ class SingleSFFTConfigure_Cupy:
         _refdict = {'N0': N0, 'N1': N1, 'Fpq': Fpq, 'FPHI': FPHI, 'ThreadPerB': MaxThreadPerB}
         _funcstr = r"""
         #include "cuComplex.h"
-        extern "C" __global__ void kmain(int SREF_pqp0q0_GPU[%(FPHI)s][2], 
+        extern "C" __global__ void kmain_HadProd_PHI(int SREF_pqp0q0_GPU[%(FPHI)s][2], 
             cuDoubleComplex SPixA_FTpq_GPU[%(Fpq)s][%(N0)s][%(N1)s], 
             cuDoubleComplex SPixA_CFTpq_GPU[%(Fpq)s][%(N0)s][%(N1)s],  
             cuDoubleComplex HpPHI_GPU[%(FPHI)s][%(N0)s][%(N1)s]) 
@@ -525,13 +525,13 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
-        _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=True)
+        _module = cp.RawModule(code=_code, backend=u'nvcc', options=('--generate-line-info',), translate_cucomplex=True)
         SFFTModule_dict['HadProd_PHI'] = _module
 
         # ** Fill Linear-System [𝚽]
         _refdict = {'N0': N0, 'N1': N1, 'NEQ': NEQ, 'Fpq': Fpq, 'Fijab': Fijab, 'FPHI': FPHI}
         _funcstr = r"""
-        extern "C" __global__ void kmain(double PrePHI_GPU[%(FPHI)s][%(N0)s][%(N1)s], 
+        extern "C" __global__ void kmain_FillLS_PHI(double PrePHI_GPU[%(FPHI)s][%(N0)s][%(N1)s], 
             double LHMAT_GPU[%(NEQ)s][%(NEQ)s]) 
         {
             int ROW = blockIdx.x*blockDim.x+threadIdx.x;
@@ -556,7 +556,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
-        _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=False)
+        _module = cp.RawModule(code=_code, backend=u'nvcc', options=('--generate-line-info',), translate_cucomplex=False)
         SFFTModule_dict['FillLS_PHI'] = _module
 
         # ************************************ HadProd_THE.cu & FillLS_THE.cu ************************************ #
@@ -565,7 +565,7 @@ class SingleSFFTConfigure_Cupy:
         _refdict = {'N0': N0, 'N1': N1, 'Fij': Fij, 'FTHE': FTHE}
         _funcstr = r"""
         #include "cuComplex.h"
-        extern "C" __global__ void kmain(cuDoubleComplex SPixA_FIij_GPU[%(Fij)s][%(N0)s][%(N1)s],
+        extern "C" __global__ void kmain_HadProd_THE(cuDoubleComplex SPixA_FIij_GPU[%(Fij)s][%(N0)s][%(N1)s],
             cuDoubleComplex PixA_CFJ_GPU[%(N0)s][%(N1)s], cuDoubleComplex HpTHE_GPU[%(FTHE)s][%(N0)s][%(N1)s])
         {    
             int ROW = blockIdx.x*blockDim.x+threadIdx.x;
@@ -583,13 +583,13 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
-        _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=True)
+        _module = cp.RawModule(code=_code, backend=u'nvcc', options=('--generate-line-info',), translate_cucomplex=True)
         SFFTModule_dict['HadProd_THE'] = _module
 
         # ** Fill Linear-System [𝚯]
         _refdict = {'N0': N0, 'N1': N1, 'NEQ': NEQ, 'Fijab': Fijab, 'Fab': Fab, 'FTHE': FTHE}
         _funcstr = r"""
-        extern "C" __global__ void kmain(int SREF_ijab_GPU[%(Fijab)s][2], int REF_ab_GPU[%(Fab)s][2], 
+        extern "C" __global__ void kmain_FillLS_THE(int SREF_ijab_GPU[%(Fijab)s][2], int REF_ab_GPU[%(Fab)s][2], 
             double PreTHE_GPU[%(FTHE)s][%(N0)s][%(N1)s], double RHb_GPU[%(NEQ)s]) 
         {
             int ROW = blockIdx.x*blockDim.x+threadIdx.x;
@@ -630,7 +630,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
-        _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=False)
+        _module = cp.RawModule(code=_code, backend=u'nvcc', options=('--generate-line-info',), translate_cucomplex=False)
         SFFTModule_dict['FillLS_THE'] = _module
 
         # ************************************ HadProd_DEL.cu & FillLS_DEL.cu ************************************ #
@@ -639,7 +639,7 @@ class SingleSFFTConfigure_Cupy:
         _refdict = {'N0': N0, 'N1': N1, 'Fpq': Fpq, 'FDEL': FDEL}
         _funcstr = r"""
         #include "cuComplex.h"
-        extern "C" __global__ void kmain(cuDoubleComplex SPixA_FTpq_GPU[%(Fpq)s][%(N0)s][%(N1)s], 
+        extern "C" __global__ void kmain_HadProd_DEL(cuDoubleComplex SPixA_FTpq_GPU[%(Fpq)s][%(N0)s][%(N1)s], 
             cuDoubleComplex PixA_CFJ_GPU[%(N0)s][%(N1)s], cuDoubleComplex HpDEL_GPU[%(FDEL)s][%(N0)s][%(N1)s])
         {
             int ROW = blockIdx.x*blockDim.x+threadIdx.x;
@@ -658,13 +658,13 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
-        _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=True)
+        _module = cp.RawModule(code=_code, backend=u'nvcc', options=('--generate-line-info',), translate_cucomplex=True)
         SFFTModule_dict['HadProd_DEL'] = _module
 
         # ** Fill Linear-System [𝚫]
         _refdict = {'N0': N0, 'N1': N1, 'NEQ': NEQ, 'Fpq': Fpq, 'Fijab': Fijab, 'FDEL': FDEL}
         _funcstr = r"""
-        extern "C" __global__ void kmain(double PreDEL_GPU[%(FDEL)s][%(N0)s][%(N1)s], 
+        extern "C" __global__ void kmain_FillLS_DEL(double PreDEL_GPU[%(FDEL)s][%(N0)s][%(N1)s], 
             double RHb_GPU[%(NEQ)s]) 
         {
             int ROW = blockIdx.x*blockDim.x+threadIdx.x;
@@ -684,7 +684,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
-        _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=False)
+        _module = cp.RawModule(code=_code, backend=u'nvcc', options=('--generate-line-info',), translate_cucomplex=False)
         SFFTModule_dict['FillLS_DEL'] = _module
 
         # ************************************ Remove_LSFStripes.cu ************************************ #
@@ -692,7 +692,7 @@ class SingleSFFTConfigure_Cupy:
         # ** Remove Forbidden Stripes in Linear-System
         _refdict = {'NEQ': NEQ, 'NEQ_FSfree': NEQ_FSfree}
         _funcstr = r"""
-        extern "C" __global__ void kmain(double LHMAT_GPU[%(NEQ)s][%(NEQ)s], int IDX_nFS_GPU[%(NEQ_FSfree)s], 
+        extern "C" __global__ void kmain_Remove_LSFStripes(double LHMAT_GPU[%(NEQ)s][%(NEQ)s], int IDX_nFS_GPU[%(NEQ_FSfree)s], 
             double LHMAT_FSfree_GPU[%(NEQ_FSfree)s][%(NEQ_FSfree)s]) 
         {
             int ROW = blockIdx.x*blockDim.x+threadIdx.x;
@@ -707,7 +707,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
-        _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=False)
+        _module = cp.RawModule(code=_code, backend=u'nvcc', options=('--generate-line-info',), translate_cucomplex=False)
         SFFTModule_dict['Remove_LSFStripes'] = _module
 
         # ************************************ Extend_Solution.cu ************************************ #
@@ -715,7 +715,7 @@ class SingleSFFTConfigure_Cupy:
         # ** Extend Solution from Forbidden-Stripes-Free Linear-System
         _refdict = {'NEQ_FSfree': NEQ_FSfree, 'NEQ': NEQ}
         _funcstr = r"""
-        extern "C" __global__ void kmain(double Solution_FSfree_GPU[%(NEQ_FSfree)s], 
+        extern "C" __global__ void kmain_Extend_Solution(double Solution_FSfree_GPU[%(NEQ_FSfree)s], 
             int IDX_nFS_GPU[%(NEQ_FSfree)s], double Solution_GPU[%(NEQ)s]) 
         {    
             int ROW = blockIdx.x*blockDim.x+threadIdx.x;
@@ -728,7 +728,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
-        _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=False)
+        _module = cp.RawModule(code=_code, backend=u'nvcc', options=('--generate-line-info',), translate_cucomplex=False)
         SFFTModule_dict['Extend_Solution'] = _module
 
         # ************************************ Construct_FDIFF.cu ************************************ #
@@ -739,7 +739,7 @@ class SingleSFFTConfigure_Cupy:
                         'SCALE': SCALE, 'ThreadPerB': MaxThreadPerB}
         _funcstr = r"""
         #include "cuComplex.h"
-        extern "C" __global__ void kmain(int SREF_ijab_GPU[%(Fijab)s][2], int REF_ab_GPU[%(Fab)s][2],  
+        extern "C" __global__ void kmain_Construct_FDIFF(int SREF_ijab_GPU[%(Fijab)s][2], int REF_ab_GPU[%(Fab)s][2],  
             cuDoubleComplex a_ijab_GPU[%(Fijab)s], cuDoubleComplex SPixA_FIij_GPU[%(Fij)s][%(N0)s][%(N1)s], 
             cuDoubleComplex Kab_Wla_GPU[%(L0)s][%(N0)s][%(N1)s], cuDoubleComplex Kab_Wmb_GPU[%(L1)s][%(N0)s][%(N1)s], 
             cuDoubleComplex b_pq_GPU[%(Fpq)s], cuDoubleComplex SPixA_FTpq_GPU[%(Fpq)s][%(N0)s][%(N1)s], 
@@ -805,7 +805,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
-        _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=True)
+        _module = cp.RawModule(code=_code, backend=u'nvcc', options=('--generate-line-info',), translate_cucomplex=True)
         SFFTModule_dict['Construct_FDIFF'] = _module
         
         SFFTConfig = (SFFTParam_dict, SFFTModule_dict)

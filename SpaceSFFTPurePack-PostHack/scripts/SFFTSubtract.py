@@ -3,7 +3,13 @@ import nvtx
 import nvmath
 import numpy as np
 
-__last_update__ = "2024-09-21"
+import sys
+import os.path as pa
+CDIR = pa.dirname(pa.abspath(__file__))
+sys.path.insert(1, CDIR)
+from caching import fft as cached_fft, FFTCache
+
+__last_update__ = "2024-10-26"
 __author__ = "Lei Hu <leihu@andrew.cmu.edu>"
 __version__ = "v1.6.4"
 
@@ -12,9 +18,11 @@ __version__ = "v1.6.4"
 # 2. Cholesky for Linear system solver
 # 3. FUSE mode for preparing difference
 
-FFT_METHOD = "NVMATH"    # "Cupy" or "NVMATH"
-LSS_METHOD = "Cholesky"  # "LU" or "Cholesky"
-PREP_DIFF_MODE = "FUSE"  # "NORMAL" or "FUSE"
+FFT_METHOD = "STATEFUL_CACHING"    # "Cupy" or "NVMATH" or "STATEFUL_CACHING"
+LSS_METHOD = "LU"                  # "LU" or "Cholesky"
+PREP_DIFF_MODE = "NORMAL"          # "NORMAL" or "FUSE"
+
+print("SFFT MODE: FFT_METHOD=%s, LSS_METHOD=%s, PREP_DIFF_MODE=%s" % (FFT_METHOD, LSS_METHOD, PREP_DIFF_MODE))
 
 # add a version with GPU arrays as inputs & outputs
 class ElementalSFFTSubtract_PureCupy:
@@ -118,7 +126,7 @@ class ElementalSFFTSubtract_PureCupy:
             PixA_CY_GPU = cp.zeros((N0, N1), dtype=cp.float64)   # coordinate.y 
 
             _module = SFFTModule_dict['SpatialCoor']
-            _func = _module.get_function('kmain')
+            _func = _module.get_function('kmain_SpatialCoor')
             _func(args=(PixA_X_GPU, PixA_Y_GPU, PixA_CX_GPU, PixA_CY_GPU), block=TpB_PIX, grid=BpG_PIX)
 
             # * Spatial Polynomial terms Iij, Tpq
@@ -126,7 +134,7 @@ class ElementalSFFTSubtract_PureCupy:
             SPixA_Tpq_GPU = cp.zeros((Fpq, N0, N1), dtype=cp.float64)
 
             _module = SFFTModule_dict['SpatialPoly']
-            _func = _module.get_function('kmain')
+            _func = _module.get_function('kmain_SpatialPoly')
             _func(args=(REF_ij_GPU, REF_pq_GPU, PixA_CX_GPU, PixA_CY_GPU, PixA_I_GPU, \
                 SPixA_Iij_GPU, SPixA_Tpq_GPU), block=TpB_PIX, grid=BpG_PIX)
             
@@ -138,23 +146,35 @@ class ElementalSFFTSubtract_PureCupy:
             # * Make DFT of J, Iij, Tpq and their conjugates
             PixA_FJ_GPU = cp.empty((N0, N1), dtype=cp.complex128)
             PixA_FJ_GPU[:, :] = PixA_J_GPU.astype(cp.complex128)
-            if FFT_METHOD == "Cupy":
+            if FFT_METHOD in ["Cupy", "STATEFUL_CACHING"]:
                 PixA_FJ_GPU[:, :] = cp.fft.fft2(PixA_FJ_GPU)
             if FFT_METHOD == "NVMATH":
-                # PixA_FJ_GPU[:, :] = nvmath.fft.fft(PixA_FJ_GPU)
                 nvmath.fft.fft(PixA_FJ_GPU, options=nvmath.fft.FFTOptions(inplace=True))
                 cp.cuda.get_current_stream().synchronize()
             PixA_FJ_GPU[:, :] *= SCALE
 
             SPixA_FIij_GPU = cp.empty((Fij, N0, N1), dtype=cp.complex128)
             SPixA_FIij_GPU[:, :, :] = SPixA_Iij_GPU.astype(cp.complex128)
+
+            if FFT_METHOD == "STATEFUL_CACHING":
+                cache = FFTCache()
+            
             for k in range(Fij): 
                 if FFT_METHOD == "Cupy":
                     SPixA_FIij_GPU[k: k+1] = cp.fft.fft2(SPixA_FIij_GPU[k: k+1])
                 if FFT_METHOD == "NVMATH":
-                    # SPixA_FIij_GPU[k: k+1] = nvmath.fft.fft(SPixA_FIij_GPU[k: k+1])
                     nvmath.fft.fft(SPixA_FIij_GPU[k: k+1], options=nvmath.fft.FFTOptions(inplace=True))
                     cp.cuda.get_current_stream().synchronize()
+                if FFT_METHOD == "STATEFUL_CACHING":
+                    cached_fft(SPixA_FIij_GPU[k: k+1], 
+                            axes=(1, 2),
+                            direction=nvmath.fft.FFTDirection.FORWARD, 
+                            options=nvmath.fft.FFTOptions(inplace=True), 
+                            cache=cache
+                    )
+            
+            if FFT_METHOD == "STATEFUL_CACHING":
+                cp.cuda.get_current_stream().synchronize()
             SPixA_FIij_GPU[:, :] *= SCALE
 
             SPixA_FTpq_GPU = cp.empty((Fpq, N0, N1), dtype=cp.complex128)
@@ -163,9 +183,17 @@ class ElementalSFFTSubtract_PureCupy:
                 if FFT_METHOD == "Cupy":
                     SPixA_FTpq_GPU[k: k+1] = cp.fft.fft2(SPixA_FTpq_GPU[k: k+1])
                 if FFT_METHOD == "NVMATH":
-                    # SPixA_FTpq_GPU[k: k+1] = nvmath.fft.fft(SPixA_FTpq_GPU[k: k+1])
                     nvmath.fft.fft(SPixA_FTpq_GPU[k: k+1], options=nvmath.fft.FFTOptions(inplace=True))
                     cp.cuda.get_current_stream().synchronize()
+                if FFT_METHOD == "STATEFUL_CACHING":
+                    cached_fft(SPixA_FTpq_GPU[k: k+1], 
+                            axes=(1, 2),
+                            direction=nvmath.fft.FFTDirection.FORWARD, 
+                            options=nvmath.fft.FFTOptions(inplace=True), 
+                            cache=cache
+                    )
+            if FFT_METHOD == "STATEFUL_CACHING":
+                cp.cuda.get_current_stream().synchronize()
             SPixA_FTpq_GPU[:, :] *= SCALE
 
             del SPixA_Iij_GPU
@@ -195,6 +223,9 @@ class ElementalSFFTSubtract_PureCupy:
         #    c. Considering the subscripted variables, HpGreek / PreGreek is Complex / Real 3D with shape (F_Greek, N0, N1).
         
         if SFFTSolution_GPU is not None:
+            if FFT_METHOD == "STATEFUL_CACHING":
+                cache.free()
+
             assert SFFTSolution_GPU.dtype == cp.float64
             Solution_GPU = SFFTSolution_GPU
             a_ijab_GPU = Solution_GPU[: Fijab]
@@ -235,7 +266,7 @@ class ElementalSFFTSubtract_PureCupy:
 
                 # a. Hadamard Product for 𝛀 [HpOMG]
                 _module = SFFTModule_dict['HadProd_OMG']
-                _func = _module.get_function('kmain')
+                _func = _module.get_function('kmain_HadProd_OMG')
                 HpOMG_GPU = cp.empty((FOMG, N0, N1), dtype=cp.complex128)
                 _func(args=(SREF_iji0j0_GPU, SPixA_FIij_GPU, SPixA_CFIij_GPU, HpOMG_GPU), \
                     block=TpB_PIX, grid=BpG_PIX)
@@ -245,10 +276,21 @@ class ElementalSFFTSubtract_PureCupy:
                     if FFT_METHOD == "Cupy":
                         HpOMG_GPU[k: k+1] = cp.fft.fft2(HpOMG_GPU[k: k+1])
                     if FFT_METHOD == "NVMATH":
-                        # HpOMG_GPU[k: k+1] = nvmath.fft.fft(HpOMG_GPU[k: k+1])
                         nvmath.fft.fft(HpOMG_GPU[k: k+1], options=nvmath.fft.FFTOptions(inplace=True))
                         cp.cuda.get_current_stream().synchronize()
+                    if FFT_METHOD == "STATEFUL_CACHING":
+                        cached_fft(HpOMG_GPU[k: k+1], 
+                                axes=(1, 2),
+                                direction=nvmath.fft.FFTDirection.FORWARD, 
+                                options=nvmath.fft.FFTOptions(inplace=True), 
+                                cache=cache
+                        )
+                if FFT_METHOD == "STATEFUL_CACHING":
+                    cp.cuda.get_current_stream().synchronize()
                 HpOMG_GPU *= SCALE
+                
+                M = cp.asnumpy(HpOMG_GPU[0].real)
+                print("HpOMG_GPU:", np.min(M), np.max(M), np.std(M))
 
                 PreOMG_GPU = cp.empty((FOMG, N0, N1), dtype=cp.float64)
                 PreOMG_GPU[:, :, :] = HpOMG_GPU.real
@@ -257,7 +299,7 @@ class ElementalSFFTSubtract_PureCupy:
 
                 # c. Fill Linear System with PreOMG
                 _module = SFFTModule_dict['FillLS_OMG']
-                _func = _module.get_function('kmain')
+                _func = _module.get_function('kmain_FillLS_OMG')
                 _func(args=(SREF_ijab_GPU, REF_ab_GPU, PreOMG_GPU, LHMAT_GPU), \
                     block=TpB_OMG, grid=BpG_OMG)
 
@@ -269,7 +311,7 @@ class ElementalSFFTSubtract_PureCupy:
 
                 # a. Hadamard Product for 𝜦 [HpGAM]
                 _module = SFFTModule_dict['HadProd_GAM']
-                _func = _module.get_function('kmain')
+                _func = _module.get_function('kmain_HadProd_GAM')
                 HpGAM_GPU = cp.empty((FGAM, N0, N1), dtype=cp.complex128)
                 _func(args=(SREF_ijpq_GPU, SPixA_FIij_GPU, SPixA_CFTpq_GPU, HpGAM_GPU), \
                     block=TpB_PIX, grid=BpG_PIX)
@@ -279,9 +321,17 @@ class ElementalSFFTSubtract_PureCupy:
                     if FFT_METHOD == "Cupy":
                         HpGAM_GPU[k: k+1] = cp.fft.fft2(HpGAM_GPU[k: k+1])
                     if FFT_METHOD == "NVMATH":
-                        # HpGAM_GPU[k: k+1] = nvmath.fft.fft(HpGAM_GPU[k: k+1])
                         nvmath.fft.fft(HpGAM_GPU[k: k+1], options=nvmath.fft.FFTOptions(inplace=True))
                         cp.cuda.get_current_stream().synchronize()
+                    if FFT_METHOD == "STATEFUL_CACHING":
+                        cached_fft(HpGAM_GPU[k: k+1], 
+                                axes=(1, 2),
+                                direction=nvmath.fft.FFTDirection.FORWARD, 
+                                options=nvmath.fft.FFTOptions(inplace=True), 
+                                cache=cache
+                        )
+                if FFT_METHOD == "STATEFUL_CACHING":
+                    cp.cuda.get_current_stream().synchronize()
                 HpGAM_GPU *= SCALE
 
                 PreGAM_GPU = cp.empty((FGAM, N0, N1), dtype=cp.float64)
@@ -290,7 +340,7 @@ class ElementalSFFTSubtract_PureCupy:
 
                 # c. Fill Linear System with PreGAM
                 _module = SFFTModule_dict['FillLS_GAM']
-                _func = _module.get_function('kmain')
+                _func = _module.get_function('kmain_FillLS_GAM')
                 _func(args=(SREF_ijab_GPU, REF_ab_GPU, PreGAM_GPU, LHMAT_GPU), \
                     block=TpB_GAM, grid=BpG_GAM)
 
@@ -302,7 +352,7 @@ class ElementalSFFTSubtract_PureCupy:
                 
                 # a. Hadamard Product for 𝜳  [HpPSI]
                 _module = SFFTModule_dict['HadProd_PSI']
-                _func = _module.get_function('kmain')
+                _func = _module.get_function('kmain_HadProd_PSI')
                 HpPSI_GPU = cp.empty((FPSI, N0, N1), dtype=cp.complex128)
                 _func(args=(SREF_pqij_GPU, SPixA_CFIij_GPU, SPixA_FTpq_GPU, HpPSI_GPU), \
                     block=TpB_PIX, grid=BpG_PIX)
@@ -312,9 +362,17 @@ class ElementalSFFTSubtract_PureCupy:
                     if FFT_METHOD == "Cupy":
                         HpPSI_GPU[k: k+1] = cp.fft.fft2(HpPSI_GPU[k: k+1])
                     if FFT_METHOD == "NVMATH":
-                        # HpPSI_GPU[k: k+1] = nvmath.fft.fft(HpPSI_GPU[k: k+1])
                         nvmath.fft.fft(HpPSI_GPU[k: k+1], options=nvmath.fft.FFTOptions(inplace=True))
                         cp.cuda.get_current_stream().synchronize()
+                    if FFT_METHOD == "STATEFUL_CACHING":
+                        cached_fft(HpPSI_GPU[k: k+1], 
+                                axes=(1, 2),
+                                direction=nvmath.fft.FFTDirection.FORWARD, 
+                                options=nvmath.fft.FFTOptions(inplace=True), 
+                                cache=cache
+                        )
+                if FFT_METHOD == "STATEFUL_CACHING":
+                    cp.cuda.get_current_stream().synchronize()
                 HpPSI_GPU *= SCALE
 
                 PrePSI_GPU = cp.empty((FPSI, N0, N1), dtype=cp.float64)
@@ -323,7 +381,7 @@ class ElementalSFFTSubtract_PureCupy:
 
                 # c. Fill Linear System with PrePSI
                 _module = SFFTModule_dict['FillLS_PSI']
-                _func = _module.get_function('kmain')
+                _func = _module.get_function('kmain_FillLS_PSI')
                 _func(args=(SREF_ijab_GPU, REF_ab_GPU, PrePSI_GPU, LHMAT_GPU), \
                     block=TpB_PSI, grid=BpG_PSI)
 
@@ -335,7 +393,7 @@ class ElementalSFFTSubtract_PureCupy:
                 
                 # a. Hadamard Product for 𝚽  [HpPHI]
                 _module = SFFTModule_dict['HadProd_PHI']
-                _func = _module.get_function('kmain')
+                _func = _module.get_function('kmain_HadProd_PHI')
                 HpPHI_GPU = cp.empty((FPHI, N0, N1), dtype=cp.complex128)
                 _func(args=(SREF_pqp0q0_GPU, SPixA_FTpq_GPU, SPixA_CFTpq_GPU, HpPHI_GPU), \
                     block=TpB_PIX, grid=BpG_PIX)
@@ -345,9 +403,17 @@ class ElementalSFFTSubtract_PureCupy:
                     if FFT_METHOD == "Cupy":
                         HpPHI_GPU[k: k+1] = cp.fft.fft2(HpPHI_GPU[k: k+1])
                     if FFT_METHOD == "NVMATH":
-                        # HpPHI_GPU[k: k+1] = nvmath.fft.fft(HpPHI_GPU[k: k+1])
                         nvmath.fft.fft(HpPHI_GPU[k: k+1], options=nvmath.fft.FFTOptions(inplace=True))
                         cp.cuda.get_current_stream().synchronize()
+                    if FFT_METHOD == "STATEFUL_CACHING":
+                        cached_fft(HpPHI_GPU[k: k+1], 
+                                axes=(1, 2),
+                                direction=nvmath.fft.FFTDirection.FORWARD, 
+                                options=nvmath.fft.FFTOptions(inplace=True), 
+                                cache=cache
+                        )
+                if FFT_METHOD == "STATEFUL_CACHING":
+                    cp.cuda.get_current_stream().synchronize()
                 HpPHI_GPU *= SCALE
 
                 PrePHI_GPU = cp.empty((FPHI, N0, N1), dtype=cp.float64)
@@ -357,7 +423,7 @@ class ElementalSFFTSubtract_PureCupy:
 
                 # c. Fill Linear System with PrePHI
                 _module = SFFTModule_dict['FillLS_PHI']
-                _func = _module.get_function('kmain')
+                _func = _module.get_function('kmain_FillLS_PHI')
                 _func(args=(PrePHI_GPU, LHMAT_GPU), block=TpB_PHI, grid=BpG_PHI)
 
                 del PrePHI_GPU
@@ -368,13 +434,13 @@ class ElementalSFFTSubtract_PureCupy:
 
                 # a1. Hadamard Product for 𝚯  [HpTHE]
                 _module = SFFTModule_dict['HadProd_THE']
-                _func = _module.get_function('kmain')
+                _func = _module.get_function('kmain_HadProd_THE')
                 HpTHE_GPU = cp.empty((FTHE, N0, N1), dtype=cp.complex128)
                 _func(args=(SPixA_FIij_GPU, PixA_CFJ_GPU, HpTHE_GPU), block=TpB_PIX, grid=BpG_PIX)
 
                 # a2. Hadamard Product for 𝚫  [HpDEL]
                 _module = SFFTModule_dict['HadProd_DEL']
-                _func = _module.get_function('kmain')
+                _func = _module.get_function('kmain_HadProd_DEL')
                 HpDEL_GPU = cp.empty((FDEL, N0, N1), dtype=cp.complex128)
                 _func(args=(SPixA_FTpq_GPU, PixA_CFJ_GPU, HpDEL_GPU), block=TpB_PIX, grid=BpG_PIX)
 
@@ -387,15 +453,34 @@ class ElementalSFFTSubtract_PureCupy:
                         HpTHE_GPU[k: k+1] = nvmath.fft.fft(HpTHE_GPU[k: k+1])
                         nvmath.fft.fft(HpTHE_GPU[k: k+1], options=nvmath.fft.FFTOptions(inplace=True))
                         cp.cuda.get_current_stream().synchronize()
+                    if FFT_METHOD == "STATEFUL_CACHING":
+                        cached_fft(HpTHE_GPU[k: k+1], 
+                                axes=(1, 2),
+                                direction=nvmath.fft.FFTDirection.FORWARD, 
+                                options=nvmath.fft.FFTOptions(inplace=True), 
+                                cache=cache
+                        )
+                if FFT_METHOD == "STATEFUL_CACHING":
+                    cp.cuda.get_current_stream().synchronize()
                 HpTHE_GPU[:, :, :] *= SCALE
                 
                 for k in range(FDEL):
                     if FFT_METHOD == "Cupy":
                         HpDEL_GPU[k: k+1] = cp.fft.fft2(HpDEL_GPU[k: k+1])
                     if FFT_METHOD == "NVMATH":
-                        # HpDEL_GPU[k: k+1] = nvmath.fft.fft(HpDEL_GPU[k: k+1])
                         nvmath.fft.fft(HpDEL_GPU[k: k+1], options=nvmath.fft.FFTOptions(inplace=True))
                         cp.cuda.get_current_stream().synchronize()
+                    if FFT_METHOD == "STATEFUL_CACHING":
+                        cached_fft(HpDEL_GPU[k: k+1], 
+                                axes=(1, 2),
+                                direction=nvmath.fft.FFTDirection.FORWARD, 
+                                options=nvmath.fft.FFTOptions(inplace=True), 
+                                cache=cache
+                        )
+                if FFT_METHOD == "STATEFUL_CACHING":
+                    cp.cuda.get_current_stream().synchronize()
+                    cache.free()
+
                 HpDEL_GPU[:, :, :] *= SCALE
 
                 PreTHE_GPU = cp.empty((FTHE, N0, N1), dtype=cp.float64)
@@ -409,14 +494,14 @@ class ElementalSFFTSubtract_PureCupy:
                 
                 # c1. Fill Linear System with PreTHE
                 _module = SFFTModule_dict['FillLS_THE']
-                _func = _module.get_function('kmain')
+                _func = _module.get_function('kmain_FillLS_THE')
                 _func(args=(SREF_ijab_GPU, REF_ab_GPU, PreTHE_GPU, RHb_GPU), \
                     block=TpB_THE, grid=BpG_THE)
                 del PreTHE_GPU
 
                 # c2. Fill Linear System with PreDEL
                 _module = SFFTModule_dict['FillLS_DEL']
-                _func = _module.get_function('kmain')
+                _func = _module.get_function('kmain_FillLS_DEL')
                 _func(args=(PreDEL_GPU, RHb_GPU), block=TpB_DEL, grid=BpG_DEL)
                 
                 del PreDEL_GPU
@@ -427,15 +512,15 @@ class ElementalSFFTSubtract_PureCupy:
                 if ConstPhotRatio:
                     RHb_FSfree_GPU = cp.take(RHb_GPU, IDX_nFS_GPU)
                     _module = SFFTModule_dict['Remove_LSFStripes']
-                    _func = _module.get_function('kmain')
+                    _func = _module.get_function('kmain_Remove_LSFStripes')
                     BpG_FSfree_PA, TpB_FSfree_PA = GPUManage(NEQ_FSfree)     # Per Axis
                     BpG_FSfree, TpB_FSfree = (BpG_FSfree_PA, BpG_FSfree_PA), (TpB_FSfree_PA, TpB_FSfree_PA, 1)
                     LHMAT_FSfree_GPU = cp.empty((NEQ_FSfree, NEQ_FSfree), dtype=cp.float64)
                     _func(args=(LHMAT_GPU, IDX_nFS_GPU, LHMAT_FSfree_GPU), block=TpB_FSfree, grid=BpG_FSfree)
-                cp.cuda.get_current_stream().synchronize()  # todo: need to be removed
 
             with nvtx.annotate("sfft3-solve-linearSystem", color="#F8F162"):
                 t8 = time.time()
+
                 # * -- -- -- -- -- -- -- -- Solve Linear System  -- -- -- -- -- -- -- -- *
                 if not ConstPhotRatio: 
                     Solution_GPU = LSSolver(LHMAT_GPU=LHMAT_GPU, RHb_GPU=RHb_GPU)
@@ -444,7 +529,7 @@ class ElementalSFFTSubtract_PureCupy:
                     # Extend the solution to be consistent form
                     Solution_FSfree_GPU = LSSolver(LHMAT_GPU=LHMAT_FSfree_GPU, RHb_GPU=RHb_FSfree_GPU)
                     _module = SFFTModule_dict['Extend_Solution']
-                    _func = _module.get_function('kmain')
+                    _func = _module.get_function('kmain_Extend_Solution')
                     BpG_ES, TpB_ES = (BpG_FSfree_PA, 1), (TpB_FSfree_PA, 1, 1)
                     Solution_GPU = cp.zeros(NEQ, dtype=cp.float64)
                     _func(args=(Solution_FSfree_GPU, IDX_nFS_GPU, Solution_GPU), block=TpB_ES, grid=BpG_ES)
@@ -522,7 +607,7 @@ class ElementalSFFTSubtract_PureCupy:
                 t10 = time.time()
                 # Construct Difference in Fourier Space
                 _module = SFFTModule_dict['Construct_FDIFF']
-                _func = _module.get_function('kmain')     
+                _func = _module.get_function('kmain_Construct_FDIFF')
                 PixA_FDIFF_GPU = cp.empty((N0, N1), dtype=cp.complex128)
                 _func(args=(SREF_ijab_GPU, REF_ab_GPU, a_ijab_GPU.astype(cp.complex128), \
                     SPixA_FIij_GPU, Kab_Wla_GPU, Kab_Wmb_GPU, b_pq_GPU.astype(cp.complex128), \
@@ -531,10 +616,10 @@ class ElementalSFFTSubtract_PureCupy:
                 # Get Difference & Reconstructed Images
                 if FFT_METHOD == "Cupy":
                     PixA_DIFF_GPU = SCALE_L * cp.fft.ifft2(PixA_FDIFF_GPU).real
-                if FFT_METHOD == "NVMATH":
+                if FFT_METHOD in ["NVMATH", "STATEFUL_CACHING"]:
                     PixA_DIFF_GPU = nvmath.fft.ifft(PixA_FDIFF_GPU).real
                     cp.cuda.get_current_stream().synchronize()
-                
+
                 dt10 = time.time() - t10
                 dtc = time.time() - tc
 
